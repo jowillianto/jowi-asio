@@ -1,0 +1,6 @@
+[submodule "libs/test-lib"]
+	path = libs/test-lib
+	url = github.com:jowillianto/jowi-test-lib
+[submodule "libs/jowi-cli"]
+	path = libs/jowi-cli
+	url = github.com:jowillianto/jowi-cli
