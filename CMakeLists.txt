@@ -6,10 +6,6 @@ set (CMAKE_CXX_SCAN_FOR_MODULES true)
 
 option (JOWI_ASIO_BUILD_TESTS "Build Tests" OFF)
 
-if (NOT TARGET jowi::crogger)
-  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/libs/jowi-cli)
-endif()
-
 add_library (${PROJECT_NAME})
 add_library (jowi::asio ALIAS ${PROJECT_NAME})
 target_sources (${PROJECT_NAME}
@@ -23,7 +19,6 @@ target_sources (${PROJECT_NAME}
       ${CMAKE_CURRENT_LIST_DIR}/src/shared_ptr.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/task.cc
 )
-target_link_libraries(jowi_asio PRIVATE jowi::crogger)
 target_compile_features (${PROJECT_NAME} PUBLIC cxx_std_23)
 
 if (JOWI_ASIO_BUILD_TESTS) 
