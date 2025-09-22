@@ -185,6 +185,22 @@ namespace jowi::asio {
     static basic_task from_address(void *addr) {
       return basic_task{coro_type::from_address(addr)};
     }
+
+    /*
+      Make tasks awaitable.
+    */
+    bool await_ready() {
+      return is_complete();
+    }
+
+    std::coroutine_handle<void> await_suspend(std::coroutine_handle<void> h) {
+      resume();
+      return h;
+    }
+
+    T await_resume() {
+      return value();
+    }
   };
 
   template <awaitable T> struct loop_awaitable {
