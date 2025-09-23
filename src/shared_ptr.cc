@@ -3,7 +3,6 @@ module;
 #include <memory>
 #include <utility>
 export module jowi.asio:shared_ptr;
-import jowi.crogger;
 
 namespace jowi::asio {}
 
