@@ -17,13 +17,13 @@ namespace jowi::asio {
   */
   export struct sleep_awaitable {
   private:
-    std::chrono::system_clock::time_point __end;
+    std::chrono::steady_clock::time_point __end;
 
   public:
     static constexpr auto is_defer_awaitable = true;
-    sleep_awaitable(std::chrono::system_clock::time_point tp) noexcept : __end{std::move(tp)} {}
+    sleep_awaitable(std::chrono::steady_clock::time_point tp) noexcept : __end{std::move(tp)} {}
     bool await_ready() const noexcept {
-      return __end <= std::chrono::system_clock::now();
+      return __end <= std::chrono::steady_clock::now();
     }
     auto await_suspend(std::coroutine_handle<void> h) const noexcept {
       std::this_thread::sleep_until(__end);
@@ -35,11 +35,11 @@ namespace jowi::asio {
   /*
     Factory Functions, this could look prettier.
   */
-  export sleep_awaitable sleep_until(std::chrono::system_clock::time_point tp) noexcept {
+  export sleep_awaitable sleep_until(std::chrono::steady_clock::time_point tp) noexcept {
     return sleep_awaitable{tp};
   }
   export sleep_awaitable sleep_for(std::chrono::milliseconds dur) {
-    return sleep_awaitable{std::chrono::system_clock::now() + dur};
+    return sleep_awaitable{std::chrono::steady_clock::now() + dur};
   }
   export sleep_awaitable sleep_for(unsigned int dur) {
     return sleep_for(std::chrono::milliseconds{dur});
