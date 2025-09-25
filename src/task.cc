@@ -13,6 +13,25 @@ import :awaitable;
 import :lf_deque;
 
 namespace jowi::asio {
+  export struct task_error : public std::exception {
+  private:
+    std::exception_ptr __e;
+
+  public:
+    task_error(std::exception_ptr e) : __e{std::move(e)} {}
+
+    const char *what() const noexcept {
+      try {
+        std::rethrow_exception(__e);
+      } catch (const std::exception &e) {
+        return e.what();
+      }
+    }
+
+    void rethrow() const {
+      std::rethrow_exception(__e);
+    }
+  };
   /*
     probably useless definition
   */
@@ -78,8 +97,7 @@ namespace jowi::asio {
       return false;
     }
 
-    template <class F, class... Args>
-      requires(std::is_invocable_r_v<bool, F, Args...>)
+    template <class F, class... Args> requires(std::is_invocable_r_v<bool, F, Args...>)
     void run_while(F f, Args &...args) {
       auto task = pop();
       while (std::invoke(f, std::forward<Args &>(args)...)) {
@@ -90,8 +108,7 @@ namespace jowi::asio {
       }
     }
 
-    template <class F, class... Args>
-      requires(std::is_invocable_r_v<bool, F, Args...>)
+    template <class F, class... Args> requires(std::is_invocable_r_v<bool, F, Args...>)
     void run_until(F f, Args &...args) {
       auto task = pop();
       while (!std::invoke(f, std::forward<Args &>(args)...)) {
@@ -172,7 +189,7 @@ namespace jowi::asio {
     T value() {
       return coro_type::promise().value();
     }
-    std::expected<T, std::exception_ptr()> expected_value() {
+    std::expected<T, task_error> expected_value() {
       return coro_type::promise().expected_value();
     }
 
@@ -235,7 +252,7 @@ namespace jowi::asio {
   template <> struct basic_promise<void> {
   private:
     std::atomic_flag __is_complete;
-    std::expected<void, std::exception_ptr> __res;
+    std::expected<void, task_error> __res;
 
   public:
     using task_type = basic_task<void>;
@@ -268,11 +285,11 @@ namespace jowi::asio {
 
     void value() {
       if (!__res) {
-        std::rethrow_exception(__res.error());
+        __res.error().rethrow();
       }
     }
 
-    std::expected<void, std::exception_ptr> expected_value() {
+    std::expected<void, task_error> expected_value() {
       return __res;
     }
 
@@ -282,8 +299,7 @@ namespace jowi::asio {
     }
   };
 
-  template <class T>
-    requires(!std::same_as<T, void>)
+  template <class T> requires(!std::same_as<T, void>)
   struct basic_promise<T> {
   private:
     std::atomic_flag __is_complete;
@@ -309,8 +325,7 @@ namespace jowi::asio {
       return __is_complete.test(m);
     }
 
-    template <class... Args>
-      requires(std::constructible_from<T, Args...>)
+    template <class... Args> requires(std::constructible_from<T, Args...>)
     void return_value(Args &&...args) {
       __value->emplace(std::forward<Args>(args)...);
       __is_complete.test_and_set(std::memory_order_release);
