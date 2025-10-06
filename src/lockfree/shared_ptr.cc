@@ -2,6 +2,8 @@ module;
 #include <cstddef>
 #include <atomic>
 #include <memory>
+#include <source_location>
+#include <stdexcept>
 #include <utility>
 export module jowi.asio.lockfree:shared_ptr;
 import :tagged_ptr;
@@ -19,10 +21,6 @@ namespace jowi::asio {
                 uint64_t cur_rcount = 1;
                 uint64_t des_rcount = 0;
                 while (!(ptr -> __rcount).compare_exchange_weak(cur_rcount, des_rcount, std::memory_order_acq_rel, std::memory_order_acquire)) {
-                    if (cur_rcount == 0) {
-                        // impossible branch. BUG ?
-                        return;
-                    }
                     des_rcount = cur_rcount - 1;
                 }
                 if (cur_rcount == 1 && des_rcount == 0) {
@@ -51,7 +49,7 @@ namespace jowi::asio {
 
         inline static std::unique_ptr<alloc_data, __deallocator> copy(const std::unique_ptr<alloc_data, __deallocator>& ptr) noexcept {
             if (!ptr) return std::unique_ptr<alloc_data, __deallocator>{nullptr, __deallocator{}};
-            ptr -> __rcount.fetch_add(1, std::memory_order_relaxed);
+            auto prev_value = ptr -> __rcount.fetch_add(1, std::memory_order_relaxed);
             return std::unique_ptr<alloc_data, __deallocator>{ptr.get(), __deallocator{}};
         }
 
@@ -161,7 +159,9 @@ private:
   using tagged_ptr = asio::tagged_ptr<uint16_t>;
 
 public:
-  atomic(asio::shared_ptr<T> ptr) : __ptr{tagged_ptr::from_pair(ptr.__ptr.release(), 0)} {}
+  atomic(asio::shared_ptr<T> ptr) noexcept : __ptr{tagged_ptr::from_pair(ptr.__ptr.release(), 0)} {}
+  template <class ...Args> requires (std::constructible_from<asio::shared_ptr<T>, Args...>)
+  atomic(Args&& ...args): atomic(asio::shared_ptr<T>{std::forward<Args>(args)...}) {}
 
   asio::shared_ptr<T> load(asio::memory_order m = asio::memory_order::sequential) const noexcept {
     /*
@@ -198,10 +198,12 @@ public:
     */
     auto [s, f] = asio::to_cas_order(m);
     tagged_ptr cur_ptr = tagged_ptr::null();
-    tagged_ptr desired_ptr = tagged_ptr::from_pair(desired.__raw_ptr(), 0);
+    // target pointer ref count will be stolen.
+    tagged_ptr desired_ptr = tagged_ptr::from_pair(desired.__release(), 0);
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, s, f)) {
       cur_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), 0);
     }
+    // steal the current atomic pointer count to return.
     return asio::shared_ptr<T>{asio::alloc_data::steal(cur_ptr.ptr<asio::alloc_data>())};
   }
   void store(

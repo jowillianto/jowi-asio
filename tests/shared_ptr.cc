@@ -2,6 +2,8 @@
 #include <future>
 #include <cstdint>
 #include <thread>
+#include <vector>
+#include <memory>
 #include <chrono>
 #include <atomic>
 import jowi.test_lib;
@@ -80,9 +82,9 @@ JOWI_ADD_TEST (test_atomic_shared_ptr_unithread) {
     std::atomic a_ptr{ ptr };
     auto ptr2 = asio::shared_ptr<uint32_t>{&drop_count[1], increment_uint};
     std::atomic a_ptr2{ptr2};
-    // store 1 -> 2. We will now drop one fully.
+    // store 2 -> 1. We will now drop one fully.
     a_ptr.store(ptr2);
-    auto load_a_ptr = a_ptr.load();
+    test_lib::assert_equal(a_ptr.load(), ptr2);
     // drop one fully.
     ptr.reset();
     test_lib::assert_equal(drop_count[0], 1);
@@ -148,4 +150,50 @@ JOWI_ADD_TEST (test_shared_ptr_compare_exchange) {
     ptr.first.reset();
     // check
     test_lib::assert_equal(drop_count.first, 1);
+}
+
+JOWI_ADD_TEST (test_shared_ptr_fuzz) {
+    // thread count
+    auto t_count = test_lib::random_integer(20u, 50u);
+    // variety count
+    auto v_count = test_lib::random_integer(100u, 200u);
+    // loop count
+    auto l_count = test_lib::random_integer(1000u, 2000u);
+    std::atomic_flag beg{ false };
+    std::vector<std::thread> ts;
+    std::vector<uint32_t> is_dropped (v_count, 0u);
+    std::vector<std::unique_ptr<std::atomic<asio::shared_ptr<uint32_t>>>> aptr;
+    aptr.reserve(v_count);
+    ts.reserve(t_count);
+    for (uint32_t i = 0; i != v_count; i += 1) {
+        is_dropped.emplace_back(0u);
+        aptr.emplace_back(std::make_unique<std::atomic<asio::shared_ptr<uint32_t>>>(&is_dropped[i], increment_uint));
+    }
+    auto loop = [&](){
+        while (!beg.test()) {}
+        uint32_t i = 0;
+        while (i != l_count) {
+            // pick target to replace.
+            auto s_id = test_lib::random_integer(0u, v_count - 1);
+            auto t_id = test_lib::random_integer(0u, v_count - 1);
+            while (s_id == t_id) {
+                t_id = test_lib::random_integer(0u, v_count - 1);
+            }
+            // load from atomic variable.
+            auto loaded_ptr = aptr[s_id] ->load();
+            aptr[t_id]->store(loaded_ptr);
+            i += 1;
+        }
+    };
+    for (uint32_t i = 0; i != t_count; i += 1) {
+        ts.emplace_back(loop);
+    }
+    beg.test_and_set();
+    for (uint32_t i = 0; i != t_count; i += 1) {
+        ts[i].join();
+    }
+    aptr.clear();
+    for (uint32_t i = 0; i != v_count; i += 1) {
+        test_lib::assert_equal(is_dropped[i], 1);
+    }
 }
