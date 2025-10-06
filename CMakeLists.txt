@@ -6,22 +6,36 @@ set (CMAKE_CXX_SCAN_FOR_MODULES true)
 
 option (JOWI_ASIO_BUILD_TESTS "Build Tests" OFF)
 
+
+add_library(jowi_asio_lockfree)
+add_library(jowi::asio_lockfree ALIAS jowi_asio_lockfree)
+target_sources(jowi_asio_lockfree
+    PUBLIC
+        FILE_SET CXX_MODULES
+        FILES
+            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/shared_ptr.cc
+            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/tagged_ptr.cc
+            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/main.cc
+)
+target_compile_features (jowi_asio_lockfree PUBLIC cxx_std_23)
+
 add_library (${PROJECT_NAME})
 add_library (jowi::asio ALIAS ${PROJECT_NAME})
 target_sources (${PROJECT_NAME}
   PUBLIC
-    FILE_SET CXX_MODULES 
+    FILE_SET CXX_MODULES
     FILES
       ${CMAKE_CURRENT_LIST_DIR}/src/awaitable.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/awaitables.cc
-      ${CMAKE_CURRENT_LIST_DIR}/src/lf_deque.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/main.cc
-      ${CMAKE_CURRENT_LIST_DIR}/src/shared_ptr.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/task.cc
+      ${CMAKE_CURRENT_LIST_DIR}/src/basic_task.cc
+      ${CMAKE_CURRENT_LIST_DIR}/src/event_loop.cc
 )
+target_link_libraries (jowi_asio PRIVATE jowi::asio_lockfree)
 target_compile_features (${PROJECT_NAME} PUBLIC cxx_std_23)
 
-if (JOWI_ASIO_BUILD_TESTS) 
+if (JOWI_ASIO_BUILD_TESTS)
   include(CTest)
   if (NOT TARGET moderna::test_lib)
     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/libs/test-lib)
@@ -29,6 +43,16 @@ if (JOWI_ASIO_BUILD_TESTS)
   jowi_add_test(test_jowi_asio_task
     ${CMAKE_CURRENT_LIST_DIR}/tests/asio.cc
     LIBRARIES ${PROJECT_NAME}
+    SANITIZERS all
+  )
+  jowi_add_test(test_jowi_asio_tagged_ptr
+    ${CMAKE_CURRENT_LIST_DIR}/tests/tagged_ptr.cc
+    LIBRARIES jowi::asio_lockfree
+    SANITIZERS all
+  )
+  jowi_add_test(test_jowi_asio_shared_ptr
+    ${CMAKE_CURRENT_LIST_DIR}/tests/shared_ptr.cc
+    LIBRARIES jowi::asio_lockfree
     SANITIZERS all
   )
 endif()

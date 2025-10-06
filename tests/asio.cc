@@ -2,6 +2,7 @@
 #include <chrono>
 #include <coroutine>
 #include <functional>
+#include <semaphore>
 import jowi.test_lib;
 import jowi.asio;
 
@@ -12,8 +13,9 @@ JOWI_SETUP(argc, argv) {
   test_lib::get_test_context().set_time_unit(test_lib::test_time_unit::MILLI_SECONDS);
 }
 
-asio::basic_task<void> random_sleep(uint32_t delay) {
+asio::unique_task<uint64_t> random_sleep(uint32_t delay) {
   co_await asio::sleep_for(delay);
+  co_return 0ULL;
 }
 
 template <class F, class... Args>
@@ -29,20 +31,50 @@ std::pair<std::invoke_result_t<F, Args...>, std::chrono::steady_clock::duration>
 
 JOWI_ADD_TEST(test_async_sleep) {
   auto beg = std::chrono::steady_clock::now();
-  asio::gather(random_sleep(500), random_sleep(500));
+  auto res = asio::gather_expected(random_sleep(10), random_sleep(10));
   auto end = std::chrono::steady_clock::now();
+  test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<0>(res))), 0ULL);
+  test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<1>(res))), 0ULL);
   test_lib::assert_true(
-    std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count() <= 510
+    std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count() >= 10
+  );
+  test_lib::assert_true(
+    std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count() < 20
   );
 }
 
 JOWI_ADD_TEST(test_async_task_await) {
   /* Nested Random Sleep. This should run in parallel with random_sleep */
-  auto nested_f = [](uint32_t delay) -> asio::basic_task<void> { co_await random_sleep(delay); };
+  auto nested_f = [](uint32_t delay) -> asio::unique_task<uint64_t> {
+    co_return co_await random_sleep(delay);
+  };
   auto beg = std::chrono::steady_clock::now();
-  asio::gather(nested_f(500), random_sleep(500));
+  auto res = asio::gather_expected(nested_f(10), random_sleep(10));
   auto end = std::chrono::steady_clock::now();
+  test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<0>(res))), 0ULL);
+  test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<1>(res))), 0ULL);
   test_lib::assert_true(
-    std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count() <= 510
+    std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count() >= 10
   );
+  test_lib::assert_true(
+    std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count() < 20
+  );
+}
+
+JOWI_ADD_TEST(test_await_waiting_task) {
+  std::binary_semaphore s{1};
+  auto task1 = [&]() -> asio::unique_task<uint32_t> {
+    co_await asio::sleep_for(std::chrono::milliseconds{10});
+    s.release();
+    co_return 0ULL;
+  };
+  auto task2 = [&]() -> asio::unique_task<uint32_t> {
+    co_await asio::asema_acquire{s};
+    co_await asio::asema_acquire{s};
+    co_return 0ULL;
+  };
+
+  auto res = asio::gather_expected(task1(), task2());
+  test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<0>(res))), 0ULL);
+  test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<1>(res))), 0ULL);
 }

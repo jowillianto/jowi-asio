@@ -3,6 +3,7 @@ module;
 #include <coroutine>
 #include <functional>
 #include <mutex>
+#include <semaphore>
 #include <shared_mutex>
 #include <thread>
 export module jowi.asio:awaitables;
@@ -50,25 +51,32 @@ namespace jowi::asio {
   */
   template <class mutex_type>
   concept unique_lockable = requires(mutex_type m) {
-    { m.try_lock() } -> std::same_as<bool>;
-    { m.lock() };
-    { m.unlock() };
+    { m.try_lock() } -> std::same_as<bool>; // non blocking call
+    { m.lock() }; // blocking call
+    { m.unlock() }; // non blocking call
   };
   template <class mutex_type>
   concept shared_lockable = requires(mutex_type m) {
-    { m.try_lock_shared() } -> std::same_as<bool>;
-    { m.lock_shared() };
-    { m.unlock_shared() };
+    { m.try_lock_shared() } -> std::same_as<bool>; // non blocking call
+    { m.lock_shared() }; // blocking call
+    { m.unlock_shared() }; // non blocking call
   };
 
-  export template <unique_lockable mutex_type> struct awaitable_lock {
+  template <class semaphore_type>
+  concept semaphore = requires(semaphore_type s) {
+    { s.try_acquire() } -> std::same_as<bool>; // non blocking call
+    { s.release() }; // non blocking call.
+    { s.acquire() }; // blocking call
+  };
+
+  export template <unique_lockable mutex_type> struct alock {
   private:
     std::reference_wrapper<mutex_type> __m;
     std::optional<std::unique_lock<mutex_type>> __res;
 
   public:
     static constexpr auto is_defer_awaitable = true;
-    awaitable_lock(mutex_type &m) noexcept : __m{std::ref(m)} {}
+    alock(mutex_type &m) noexcept : __m{std::ref(m)} {}
     bool await_ready() {
       bool is_locked = __m.get().try_lock();
       if (is_locked) {
@@ -86,13 +94,13 @@ namespace jowi::asio {
     }
   };
 
-  export template <shared_lockable mutex_type> struct awaitable_lock_shared {
+  export template <shared_lockable mutex_type> struct alock_shared {
   private:
     std::reference_wrapper<mutex_type> __m;
     std::optional<std::shared_lock<mutex_type>> __res;
 
   public:
-    awaitable_lock_shared(mutex_type &m) noexcept : __m{std::ref(m)} {}
+    alock_shared(mutex_type &m) noexcept : __m{std::ref(m)} {}
     static constexpr auto is_defer_awaitable = true;
     bool await_ready() {
       bool is_locked = __m.get().try_lock_shared();
@@ -113,7 +121,29 @@ namespace jowi::asio {
     }
   };
 
-  template struct awaitable_lock<std::mutex>;
-  template struct awaitable_lock<std::shared_mutex>;
-  template struct awaitable_lock_shared<std::shared_mutex>;
+  export template <semaphore semaphore_type> struct asema_acquire {
+  private:
+    std::reference_wrapper<semaphore_type> __s;
+
+  public:
+    asema_acquire(semaphore_type &s) : __s{std::ref(s)} {}
+    static constexpr bool is_defer_awaitable = true;
+
+    bool await_ready() {
+      return __s.get().try_acquire();
+    }
+
+    std::coroutine_handle<void> await_suspend(std::coroutine_handle<void> h) {
+      __s.get().acquire();
+      return h;
+    }
+
+    void await_resume() {}
+  };
+
+  template struct alock<std::mutex>;
+  template struct alock<std::shared_mutex>;
+  template struct alock_shared<std::shared_mutex>;
+  template struct asema_acquire<std::binary_semaphore>;
+
 }
