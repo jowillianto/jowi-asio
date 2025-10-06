@@ -61,7 +61,7 @@ namespace jowi::asio {
       return ptr_size() * 8;
     }
     void *raw_ptr() const noexcept {
-      return reinterpret_cast<void *>((__v << tag_bit_size()) >> tag_bit_size());
+      return reinterpret_cast<void *>(static_cast<int64_t>(__v << tag_bit_size()) >> tag_bit_size());
     }
     template <class T> T *ptr() const noexcept {
       return static_cast<T *>(raw_ptr());

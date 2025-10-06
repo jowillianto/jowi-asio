@@ -7,7 +7,7 @@ export module jowi.asio:task;
 import :awaitable;
 
 namespace jowi::asio {
-  export struct task_error {
+  export struct task_error : public std::exception {
   private:
     std::exception_ptr __e;
 
