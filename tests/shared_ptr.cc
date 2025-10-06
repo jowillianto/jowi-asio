@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <thread>
 #include <chrono>
+#include <atomic>
 import jowi.test_lib;
 import jowi.asio.lockfree;
 
@@ -17,14 +18,15 @@ void increment_uint(uint32_t* d) {
     *d += 1;
 }
 
-JOWI_ADD_TEST(test_drop) {
+JOWI_ADD_TEST(test_shared_ptr_drop) {
   uint32_t drop_count = 0;
   auto ptr = asio::shared_ptr<uint32_t>{&drop_count,increment_uint};
   ptr.reset();
   test_lib::assert_equal(drop_count, 1);
 }
 
-JOWI_ADD_TEST(test_living_copy_do_not_drop) {
+
+JOWI_ADD_TEST(test_shared_ptr_living_copy_no_drop) {
     uint32_t drop_count = 0;
     auto ptr = asio::shared_ptr<uint32_t>{&drop_count,increment_uint};
     auto ptr2 = ptr;
@@ -32,7 +34,7 @@ JOWI_ADD_TEST(test_living_copy_do_not_drop) {
     test_lib::assert_equal(drop_count, 0);
 }
 
-JOWI_ADD_TEST(test_daemon_drop) {
+JOWI_ADD_TEST(test_shared_ptr_thread_drop) {
     uint32_t drop_count = 0;
     auto ptr = asio::shared_ptr<uint32_t>{&drop_count,increment_uint};
     auto fut = std::async(
@@ -47,7 +49,7 @@ JOWI_ADD_TEST(test_daemon_drop) {
     test_lib::assert_equal(drop_count, 1);
 }
 
-JOWI_ADD_TEST(test_fuzz) {
+JOWI_ADD_TEST(test_shared_ptr_drop_fuzz) {
     uint32_t drop_count = 0;
     auto ptr = asio::shared_ptr<uint32_t>{&drop_count, increment_uint};
     auto start = std::chrono::steady_clock::now();
@@ -70,4 +72,80 @@ JOWI_ADD_TEST(test_fuzz) {
         t.join();
     }
     test_lib::assert_equal(drop_count, 1);
+}
+
+JOWI_ADD_TEST (test_atomic_shared_ptr_unithread) {
+    uint32_t drop_count[2] = {0, 0};
+    auto ptr = asio::shared_ptr<uint32_t>{&drop_count[0], increment_uint};
+    std::atomic a_ptr{ ptr };
+    auto ptr2 = asio::shared_ptr<uint32_t>{&drop_count[1], increment_uint};
+    std::atomic a_ptr2{ptr2};
+    // store 1 -> 2. We will now drop one fully.
+    a_ptr.store(ptr2);
+    auto load_a_ptr = a_ptr.load();
+    // drop one fully.
+    ptr.reset();
+    test_lib::assert_equal(drop_count[0], 1);
+    // now we drop everything fully.
+    a_ptr.store(nullptr);
+    a_ptr2.store(nullptr);
+    ptr2.reset();
+    test_lib::assert_equal(drop_count[1], 1);
+}
+
+JOWI_ADD_TEST (test_atomic_shared_ptr_hold_copy) {
+    uint32_t drop_count = 0;
+    auto ptr = asio::shared_ptr<uint32_t>{&drop_count, increment_uint};
+    std::atomic a_ptr{ ptr };
+    ptr.reset();
+    test_lib::assert_equal(drop_count, 0);
+    // now drop atomic
+    a_ptr.store(nullptr);
+    test_lib::assert_equal(drop_count, 1);
+}
+
+JOWI_ADD_TEST (test_shared_ptr_compare_exchange) {
+    auto drop_count = std::pair{0u, 0u};
+    auto ptr = std::pair {
+        asio::shared_ptr{&drop_count.first, increment_uint},
+        asio::shared_ptr{&drop_count.second, increment_uint}
+    };
+    std::pair<std::atomic<decltype(ptr.first)>, std::atomic<decltype(ptr.second)>> a_ptr{
+        ptr.first, ptr.second
+    };
+
+    asio::shared_ptr<uint32_t> dummy{ nullptr };
+    // dummy is null
+    test_lib::assert_false(a_ptr.first.compare_exchange_weak(dummy, nullptr));
+    // dummy contains ptr.first
+    test_lib::assert_equal(dummy, ptr.first);
+    // dummy is ptr.first
+    test_lib::assert_false(a_ptr.second.compare_exchange_weak(dummy, nullptr));
+    // dummy contains ptr.second
+    test_lib::assert_equal(dummy, ptr.second);
+    // this should succeed, content of dummy is undisturbed.
+    test_lib::assert_true(a_ptr.second.compare_exchange_weak(dummy, nullptr));
+    // dummy contains ptr.second
+    test_lib::assert_equal(dummy, ptr.second);
+    // check that now second atomic pointer contains ptr.second.
+    test_lib::assert_equal(a_ptr.second.load(), asio::shared_ptr<uint32_t>{nullptr});
+    // we drop ptr.second and now drop_count.second should be one.
+    ptr.second.reset();
+    // oh damn dummy is ptr.2, how silly, let's reset it.
+    dummy.reset();
+    // now check
+    test_lib::assert_equal(drop_count.second, 1);
+    // now we do the same for the first one
+    test_lib::assert_false(a_ptr.first.compare_exchange_weak(dummy, nullptr));
+    // now contains ptr.first
+    test_lib::assert_equal(dummy, ptr.first);
+    // now we store the dummy should succeed and dummy should be untouched.
+    test_lib::assert_true(a_ptr.first.compare_exchange_weak(dummy, nullptr));
+    // check dummy
+    test_lib::assert_equal(dummy, ptr.first);
+    // drop dummy and ptr.first
+    dummy.reset();
+    ptr.first.reset();
+    // check
+    test_lib::assert_equal(drop_count.first, 1);
 }

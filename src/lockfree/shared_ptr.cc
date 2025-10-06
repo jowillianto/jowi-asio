@@ -8,69 +8,84 @@ import :tagged_ptr;
 
 namespace jowi::asio {
   struct alloc_data {
-    void *data;
-    std::atomic<uint64_t> rcount;
-    void (*deleter)(void *);
+    private:
+        void *__data;
+        std::atomic<uint64_t> __rcount;
+        void (*__deleter)(void *);
 
-    struct deallocator {
-        void operator() (alloc_data* ptr) {
-            if (ptr == nullptr) return;
-            uint64_t cur_rcount = 1;
-            uint64_t des_rcount = 0;
-            while (!(ptr -> rcount).compare_exchange_weak(cur_rcount, des_rcount, std::memory_order_acq_rel, std::memory_order_acquire)) {
-                if (cur_rcount == 0) {
-                    // impossible branch. BUG ?
-                    return;
+        struct __deallocator {
+            void operator() (alloc_data* ptr) {
+                if (ptr == nullptr) return;
+                uint64_t cur_rcount = 1;
+                uint64_t des_rcount = 0;
+                while (!(ptr -> __rcount).compare_exchange_weak(cur_rcount, des_rcount, std::memory_order_acq_rel, std::memory_order_acquire)) {
+                    if (cur_rcount == 0) {
+                        // impossible branch. BUG ?
+                        return;
+                    }
+                    des_rcount = cur_rcount - 1;
                 }
-                des_rcount = cur_rcount - 1;
+                if (cur_rcount == 1 && des_rcount == 0) {
+                    ptr -> __deleter(ptr -> __data);
+                    ptr -> __data = nullptr;
+                    std::default_delete<alloc_data>{}(ptr);
+                }
             }
-            if (cur_rcount == 1 && des_rcount == 0) {
-                ptr -> deleter(ptr -> data);
-                ptr -> data = nullptr;
-                std::default_delete<alloc_data>{}(ptr);
-            }
-        }
-    };
-
-    template <class T>
-    static std::unique_ptr<alloc_data, deallocator> allocate(T* ptr, void(*deleter)(T*)) {
-        return std::unique_ptr<alloc_data, deallocator>{
-            new alloc_data{static_cast<void*>(ptr), 1, reinterpret_cast<void(*)(void*)>(deleter)},
-            deallocator{}
         };
-    }
+    public:
+        template <class T>
+        alloc_data(T* data, void(*deleter)(T*)): __data{static_cast<void*>(data)}, __rcount{1}, __deleter{reinterpret_cast<void(*)(void*)>(deleter)} {}
 
-    static std::unique_ptr<alloc_data, deallocator> copy(const std::unique_ptr<alloc_data, deallocator>& ptr) noexcept {
-        if (!ptr) return std::unique_ptr<alloc_data, deallocator>{nullptr, deallocator{}};
-        ptr -> rcount.fetch_add(1, std::memory_order_relaxed);
-        return std::unique_ptr<alloc_data, deallocator>{ptr.get(), deallocator{}};
-    }
+        template <class T>
+        inline T* get() const noexcept {
+            return static_cast<T*>(__data);
+        }
 
-    static std::unique_ptr<alloc_data, deallocator> steal(alloc_data* data) noexcept {
-        return std::unique_ptr<alloc_data, deallocator>{ data, deallocator{}};
-    }
+        template <class T>
+        static std::unique_ptr<alloc_data, __deallocator> allocate(T* ptr, void(*deleter)(T*)) {
+            return std::unique_ptr<alloc_data, __deallocator>{
+                std::make_unique<alloc_data>(ptr, deleter).release(),
+                __deallocator{}
+            };
+        }
 
-    static std::unique_ptr<alloc_data, deallocator> steal_copy(alloc_data* data) noexcept {
-        auto ptr = steal(data);
-        auto new_ptr = copy(ptr);
-        auto _ = ptr.release();
-        return new_ptr;
-    }
+        inline static std::unique_ptr<alloc_data, __deallocator> copy(const std::unique_ptr<alloc_data, __deallocator>& ptr) noexcept {
+            if (!ptr) return std::unique_ptr<alloc_data, __deallocator>{nullptr, __deallocator{}};
+            ptr -> __rcount.fetch_add(1, std::memory_order_relaxed);
+            return std::unique_ptr<alloc_data, __deallocator>{ptr.get(), __deallocator{}};
+        }
+
+        inline static std::unique_ptr<alloc_data, __deallocator> steal(alloc_data* data) noexcept {
+            return std::unique_ptr<alloc_data, __deallocator>{ data, __deallocator{}};
+        }
+
+        inline static std::unique_ptr<alloc_data, __deallocator> steal_copy(alloc_data* data) noexcept {
+            auto ptr = steal(data);
+            auto new_ptr = copy(ptr);
+            auto _ = ptr.release();
+            return new_ptr;
+        }
+
+        inline static void dealloc(alloc_data* data) noexcept {
+            auto _ = steal(data);
+        }
+
+        using managed_type = std::unique_ptr<alloc_data, __deallocator>;
   };
 
   export template <class T> struct shared_ptr {
   private:
-    using alloc_ptr_type = std::unique_ptr<alloc_data, alloc_data::deallocator>;
+    using alloc_ptr_type = alloc_data::managed_type;
     friend std::atomic<shared_ptr<T>>;
     alloc_ptr_type __ptr;
 
     // Non public constructor. Never publicly use.
     shared_ptr(alloc_ptr_type ptr) : __ptr{std::move(ptr)}{}
 
-    alloc_data* __raw_ptr() const noexcept {
+    inline alloc_data* __raw_ptr() const noexcept {
         return __ptr.get();
     }
-    alloc_data* __release() noexcept {
+    inline alloc_data* __release() noexcept {
         return __ptr.release();
     }
 
@@ -106,7 +121,7 @@ namespace jowi::asio {
 
     T *get() const noexcept {
       if (__ptr == nullptr) return nullptr;
-      return static_cast<T *>(__ptr->data);
+      return static_cast<T *>(__ptr->get<T>());
     }
 
     T *operator->() const noexcept {
@@ -122,7 +137,7 @@ namespace jowi::asio {
       __ptr.reset();
     }
     void release() {
-      auto _ = __ptr.release();
+        auto _ = __ptr.release();
     }
 
     friend bool operator==(const shared_ptr &l, const shared_ptr &r) {
@@ -195,7 +210,7 @@ public:
     exchange(desired, m);
   }
   bool compare_exchange(
-    asio::shared_ptr<T> &e, asio::shared_ptr<T> d, std::memory_order s, std::memory_order f
+    asio::shared_ptr<T> &e, asio::shared_ptr<T> d, std::memory_order s = std::memory_order_seq_cst, std::memory_order f = std::memory_order_seq_cst
   ) noexcept {
     tagged_ptr cur_ptr = tagged_ptr::from_pair(e.__raw_ptr(), 0);
     tagged_ptr desired_ptr = tagged_ptr::from_pair(d.__raw_ptr(), 0);
@@ -215,21 +230,22 @@ public:
     }
     // On loop exit, two conditions could happen:
     // 1. a load (a load)
-    // 2. a cas (if cur_ptr == e.__ptr, it is a cas)
-    // Check if it is a load.
-    auto ptr = cur_ptr.ptr<asio::alloc_data>();
+    // 2. a cas (if desired_ptr == d.__ptr, it is a cas)
+    // Check if it is a load or a cas. On loop exit, __ptr should now contain desired_ptr.
     // check if cas
-    if (ptr == e.__raw_ptr()) {
+    auto cas_ptr = desired_ptr.ptr<asio::alloc_data>();
+    if (cas_ptr == d.__raw_ptr()) {
       // since it is a CAS, ignore e and proceed with leaking d.
+      // and freeing the current pointer.
+      asio::alloc_data::dealloc(cur_ptr.ptr<asio::alloc_data>());
       d.__release();
       return true;
     }
-    // load case
-    // since this is a load, increment the pointer and reset the ref count.
-    auto stolen_ptr = asio::alloc_data::steal_copy(ptr);
+    // load case. Read from desired_ptr and preform operations.
+    auto stolen_ptr = asio::alloc_data::steal_copy(cas_ptr);
     // decrement ref count.
     cur_ptr = desired_ptr;
-    desired_ptr = tagged_ptr::from_pair(ptr, cur_ptr.tag() - 1);
+    desired_ptr = tagged_ptr::from_pair(cas_ptr, cur_ptr.tag() - 1);
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, s, f)) {
       desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
     }
@@ -238,47 +254,18 @@ public:
   }
 
   bool compare_exchange_weak(
-    asio::shared_ptr<T> &e, asio::shared_ptr<T> d, std::memory_order s, std::memory_order f
+    asio::shared_ptr<T> &e, asio::shared_ptr<T> d, std::memory_order s = std::memory_order_seq_cst, std::memory_order f = std::memory_order_seq_cst
   ) noexcept {
     return compare_exchange(e, d, s, f);
   }
 
   bool compare_exchange_strong(
-    asio::shared_ptr<T> &e, asio::shared_ptr<T> d, std::memory_order s, std::memory_order f
+    asio::shared_ptr<T> &e, asio::shared_ptr<T> d, std::memory_order s = std::memory_order_seq_cst, std::memory_order f = std::memory_order_seq_cst
   ) noexcept {
     return compare_exchange(e, d, s, f);
   }
-};
 
-template struct std::atomic<asio::shared_ptr<uint64_t>>;
-template <class T> struct std::atomic<std::shared_ptr<T>> {
-private:
-  std::shared_ptr<T> __ptr;
-
-public:
-  atomic(std::shared_ptr<T> ptr) : __ptr{std::move(ptr)} {}
-
-  std::shared_ptr<T> load(std::memory_order m) noexcept {
-    return std::atomic_load_explicit(&__ptr, m);
-  }
-
-  void store(std::shared_ptr<T> desired, std::memory_order m) noexcept {
-    std::atomic_store_explicit(&__ptr, std::move(desired), m);
-  }
-
-  std::shared_ptr<T> exchange(std::shared_ptr<T> desired, std::memory_order m) noexcept {
-    return std::atomic_exchange_explicit(&__ptr, std::move(desired), m);
-  }
-
-  bool compare_exchange_weak(
-    std::shared_ptr<T> &cur, std::shared_ptr<T> desired, std::memory_order s, std::memory_order r
-  ) {
-    return std::atomic_compare_exchange_weak_explicit(&__ptr, &cur, std::move(desired), s, r);
-  }
-
-  bool compare_exchange_strong(
-    std::shared_ptr<T> &cur, std::shared_ptr<T> desired, std::memory_order s, std::memory_order r
-  ) {
-    return std::atomic_compare_exchange_strong_explicit(&__ptr, &cur, std::move(desired), s, r);
+  ~atomic() {
+      asio::alloc_data::dealloc(__ptr.load().ptr<asio::alloc_data>());
   }
 };
