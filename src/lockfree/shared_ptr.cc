@@ -204,7 +204,7 @@ public:
     tagged_ptr desired_ptr = tagged_ptr::from_pair(desired.__release(), 0);
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
       cur_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), 0);
-      std::this_thread::yield();
+      // std::this_thread::yield();
     }
     // steal the current atomic pointer count to return.
     return asio::shared_ptr<T>{asio::alloc_data::steal(cur_ptr.ptr<asio::alloc_data>())};
@@ -226,7 +226,7 @@ public:
         // should not store without 0 ref count.
         cur_ptr = tagged_ptr::from_pair(e.__raw_ptr(), 0);
         desired_ptr = tagged_ptr::from_pair(d.__raw_ptr(), 0);
-        std::this_thread::yield();
+        // std::this_thread::yield();
       }
       // pointer is different
       else {

@@ -41,8 +41,9 @@ void run_lfq(uint32_t t_count, uint32_t l_count) {
         lfq.push(test_lib::random_integer(0u, UINT_MAX));
         push_count.fetch_add(1, std::memory_order_relaxed);
       } else {
-        lfq.pop();
-        pop_count.fetch_add(1, std::memory_order_relaxed);
+        if (lfq.pop()) {
+          pop_count.fetch_add(1, std::memory_order_relaxed);
+        }
       }
     }
   };
@@ -106,8 +107,10 @@ void run_mq(uint32_t t_count, uint32_t l_count) {
         push_count.fetch_add(1, std::memory_order_relaxed);
       } else {
         std::unique_lock l{m};
-        q.pop();
-        pop_count.fetch_add(1, std::memory_order_relaxed);
+        if (!q.empty()) {
+          q.pop();
+          pop_count.fetch_add(1, std::memory_order_relaxed);
+        }
       }
     }
   };
