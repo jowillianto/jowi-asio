@@ -23,11 +23,12 @@ namespace jowi::asio {
     std::optional<T> v;
     atomic_shared_ptr<lf_queue_node<T>> next;
 
-    lf_queue_node(std::optional<T> v, asio::shared_ptr<lf_queue_node<T>> n): v{std::move(v)}, next{std::move(n)} {}
+    lf_queue_node(std::optional<T> v, asio::shared_ptr<lf_queue_node<T>> n) :
+      v{std::move(v)}, next{std::move(n)} {}
 
     template <class... Args>
       requires(std::constructible_from<T, Args...>)
-    lf_queue_node(Args&& ...args): v{std::forward<Args>(args)...}, next{nullptr} {}
+    lf_queue_node(Args &&...args) : v{std::forward<Args>(args)...}, next{nullptr} {}
 
     bool has_value() const noexcept {
       return static_cast<bool>(v);
@@ -36,7 +37,6 @@ namespace jowi::asio {
     static lf_queue_node dummy() {
       return lf_queue_node{std::nullopt, nullptr};
     }
-
   };
 
   template <class T> struct lf_queue {
@@ -57,17 +57,15 @@ namespace jowi::asio {
         is a nullptr. Hence, at all times, we are going to find such a node.
         __tail serves as a starting point and as a cache.
       */
-      auto tail = __tail.load(asio::memory_order::strict);
+      auto tail = __tail.load(memory_order_strict);
       auto tail_next = shared_ptr<lf_queue_node<T>>{nullptr};
       // Check if the loaded tail is a real tail.
-      while (!tail->next.compare_exchange_weak(
-        tail_next, node, std::memory_order_acq_rel, std::memory_order_acquire
-      )) {
+      while (!tail->next.compare_exchange_weak(tail_next, node, memory_order_strict)) {
         // This means, the next node is not null, we need to move the tail node.
         tail = std::move(tail_next);
       }
       // These need not be strongly ordered because who cares.
-      __tail.store(node, asio::memory_order::relaxed);
+      __tail.store(node, memory_order_relaxed);
       __size.fetch_add(1, std::memory_order_relaxed);
     }
 
@@ -75,21 +73,19 @@ namespace jowi::asio {
       /*
         we are performing a swap of head.next to head.next.next
       */
-      auto head_next = __head.next.load(asio::memory_order::strict);
+      auto head_next = __head.next.load(memory_order_strict);
       if (!head_next) return std::nullopt;
-      auto head_next_next = __head.next.load(asio::memory_order::strict);
-      while (!__head.next.compare_exchange_weak(
-        head_next, head_next_next, std::memory_order_acq_rel, std::memory_order_acquire
-      )) {
+      auto head_next_next = __head.next.load(memory_order_strict);
+      while (!__head.next.compare_exchange_weak(head_next, head_next_next, memory_order_strict)) {
         if (!head_next) {
           return std::nullopt;
         }
       }
       if (!head_next_next) {
-        __tail.store(__get_resetted_tail(), asio::memory_order::strict);
+        __tail.store(__get_resetted_tail(), memory_order_strict);
       }
       // No more contention, detached.
-      head_next->next.store(nullptr, asio::memory_order::relaxed);
+      head_next->next.store(nullptr, memory_order_relaxed);
       __size.fetch_sub(1, std::memory_order_relaxed);
       return head_next;
     }

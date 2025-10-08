@@ -5,6 +5,7 @@ set (CMAKE_CXX_STANDARD_REQUIRED true)
 set (CMAKE_CXX_SCAN_FOR_MODULES true)
 
 option (JOWI_ASIO_BUILD_TESTS "Build Tests" OFF)
+option (JOWI_ASIO_BUILD_BENCHMARKS "Build Benchmarks" OFF)
 
 
 add_library(jowi_asio_lockfree)
@@ -15,6 +16,7 @@ target_sources(jowi_asio_lockfree
         FILES
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/shared_ptr.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/tagged_ptr.cc
+            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/lockfree_node.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/main.cc
 )
 target_compile_features (jowi_asio_lockfree PUBLIC cxx_std_23)
@@ -55,6 +57,25 @@ if (JOWI_ASIO_BUILD_TESTS)
     LIBRARIES jowi::asio_lockfree
     SANITIZERS all
   )
+  jowi_add_test(test_jowi_asio_lockfree_queue
+      ${CMAKE_CURRENT_LIST_DIR}/tests/lockfree_queue.cc
+      LIBRARIES jowi::asio_lockfree
+      SANITIZERS all
+  )
+endif()
+
+if (JOWI_ASIO_BUILD_BENCHMARKS)
+    add_executable(benchmark_jowi_asio_lockfree_queue
+        ${CMAKE_CURRENT_LIST_DIR}/benchmarks/lockfree_queue.cc
+    )
+    target_link_libraries(benchmark_jowi_asio_lockfree_queue
+        PRIVATE
+            jowi::asio_lockfree
+            jowi::cli
+            jowi::crogger
+            jowi::cli_ui
+            jowi::test_lib
+    )
 endif()
 
 if (JOWI_INSTALL)

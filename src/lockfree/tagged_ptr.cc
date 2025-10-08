@@ -1,14 +1,18 @@
 module;
 #include <algorithm>
 #include <atomic>
+#include <compare>
 #include <cstdint>
 #include <utility>
 export module jowi.asio.lockfree:tagged_ptr;
 
 namespace jowi::asio {
-  export enum struct memory_order { relaxed, sequential, strict };
+  export enum struct memory_order { relaxed = 0, sequential, strict };
+  export memory_order memory_order_relaxed = memory_order::relaxed;
+  export memory_order memory_order_seq_cst = memory_order::sequential;
+  export memory_order memory_order_strict = memory_order::strict;
 
-  std::pair<std::memory_order, std::memory_order> to_cas_order(memory_order m) {
+  constexpr std::pair<std::memory_order, std::memory_order> to_cas_order(memory_order m) {
     if (m == memory_order::relaxed) {
       return {std::memory_order_relaxed, std::memory_order_relaxed};
     } else if (m == memory_order::sequential) {
@@ -18,7 +22,7 @@ namespace jowi::asio {
     }
   }
 
-  std::memory_order to_store_order(memory_order m) {
+  constexpr std::memory_order to_store_order(memory_order m) {
     if (m == memory_order::relaxed) return std::memory_order_relaxed;
     else if (m == memory_order::sequential)
       return std::memory_order_seq_cst;
@@ -26,7 +30,7 @@ namespace jowi::asio {
       return std::memory_order_release;
   }
 
-  std::memory_order to_load_order(memory_order m) {
+  constexpr std::memory_order to_load_order(memory_order m) {
     if (m == memory_order::relaxed) return std::memory_order_relaxed;
     else if (m == memory_order::sequential)
       return std::memory_order_seq_cst;
@@ -61,7 +65,9 @@ namespace jowi::asio {
       return ptr_size() * 8;
     }
     void *raw_ptr() const noexcept {
-      return reinterpret_cast<void *>(static_cast<int64_t>(__v << tag_bit_size()) >> tag_bit_size());
+      return reinterpret_cast<void *>(
+        static_cast<int64_t>(__v << tag_bit_size()) >> tag_bit_size()
+      );
     }
     template <class T> T *ptr() const noexcept {
       return static_cast<T *>(raw_ptr());
@@ -77,6 +83,20 @@ namespace jowi::asio {
     }
     template <class T> std::pair<T *, D> to_pair() const noexcept {
       return std::pair{ptr<T>(), tag()};
+    }
+
+    /*
+     * bitwise comparison operator
+     */
+    constexpr friend bool operator==(const tagged_ptr &l, const tagged_ptr &r) {
+      return l == r;
+    }
+    constexpr friend std::partial_ordering operator<=>(const tagged_ptr &l, const tagged_ptr &r) {
+      if (l == r) {
+        return std::partial_ordering::equivalent;
+      } else {
+        return std::partial_ordering::unordered;
+      }
     }
 
     static tagged_ptr from_pair(void *ptr, D tag) {
@@ -120,36 +140,38 @@ private:
 public:
   atomic(asio::tagged_ptr<D, psize> v) : __v{v.__v} {}
 
-  asio::tagged_ptr<D, psize> load(std::memory_order m = std::memory_order_seq_cst) const noexcept {
-    return tagged_ptr{__v.load(m)};
+  asio::tagged_ptr<D, psize> load(
+    asio::memory_order m = asio::memory_order_seq_cst
+  ) const noexcept {
+    return tagged_ptr{__v.load(asio::to_load_order(m))};
   }
   void store(
-    asio::tagged_ptr<D, psize> d, std::memory_order m = std::memory_order_seq_cst
+    asio::tagged_ptr<D, psize> d, asio::memory_order m = asio::memory_order_seq_cst
   ) noexcept {
-    __v.store(d.__v, m);
+    __v.store(d.__v, asio::to_store_order(m));
   }
 
   asio::tagged_ptr<D, psize> exchange(
-    asio::tagged_ptr<D, psize> d, std::memory_order m = std::memory_order_seq_cst
+    asio::tagged_ptr<D, psize> d, asio::memory_order m = asio::memory_order_seq_cst
   ) noexcept {
-    return tagged_ptr{__v.exchange(d.__v, m)};
+    return tagged_ptr{__v.exchange(d.__v, asio::to_cas_order(m).first)};
   }
 
   bool compare_exchange_weak(
     asio::tagged_ptr<D, psize> &e,
     asio::tagged_ptr<D, psize> d,
-    std::memory_order s = std::memory_order_seq_cst,
-    std::memory_order f = std::memory_order_seq_cst
+    asio::memory_order m = asio::memory_order_seq_cst
   ) noexcept {
+    auto [s, f] = asio::to_cas_order(m);
     return __v.compare_exchange_weak(e.__v, d.__v, s, f);
   }
 
   bool compare_exchange_strong(
     asio::tagged_ptr<D, psize> &e,
     asio::tagged_ptr<D, psize> d,
-    std::memory_order s = std::memory_order_seq_cst,
-    std::memory_order f = std::memory_order_seq_cst
+    asio::memory_order m = asio::memory_order_seq_cst
   ) noexcept {
+    auto [s, f] = asio::to_cas_order(m);
     return __v.compare_exchange_strong(e.__v, d.__v, s, f);
   }
 
@@ -162,10 +184,9 @@ public:
   }
 
   tagged_ptr exchange_tag(D tag, asio::memory_order m = asio::memory_order::sequential) noexcept {
-    auto [s, f] = asio::to_cas_order(m);
     auto cur_ptr = tagged_ptr::null();
     auto target_ptr = tagged_ptr::null_tag(nullptr);
-    while (!compare_exchange_weak(cur_ptr, target_ptr, s, f)) {
+    while (!compare_exchange_weak(cur_ptr, target_ptr, m)) {
       target_ptr = tagged_ptr::from_pair(cur_ptr.to_raw_pair().first, tag);
     }
     return cur_ptr;
@@ -174,10 +195,9 @@ public:
   tagged_ptr exchange_ptr(
     void *ptr, asio::memory_order m = asio::memory_order::sequential
   ) noexcept {
-    auto [s, f] = asio::to_cas_order(m);
     auto cur_ptr = tagged_ptr::null();
     auto target_ptr = tagged_ptr::from_pair(ptr, static_cast<D>(0));
-    while (!compare_exchange_weak(cur_ptr, target_ptr, s, f)) {
+    while (!compare_exchange_weak(cur_ptr, target_ptr, m)) {
       target_ptr = tagged_ptr::from_pair(ptr, cur_ptr.to_raw_pair().second);
     }
     return cur_ptr;
