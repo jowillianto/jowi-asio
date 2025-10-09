@@ -50,6 +50,7 @@ namespace jowi::asio {
       }
       // head_next is now a stupid node with nothing in it.
       __size.fetch_sub(1, std::memory_order_relaxed);
+      head_next->next.store(nullptr, memory_order_relaxed);
       return head_next;
     }
 
