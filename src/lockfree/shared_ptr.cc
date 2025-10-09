@@ -2,7 +2,6 @@ module;
 #include <atomic>
 #include <cstddef>
 #include <memory>
-#include <stdexcept>
 #include <utility>
 export module jowi.asio.lockfree:shared_ptr;
 import :tagged_ptr;
