@@ -186,7 +186,7 @@ private:
     auto stolen_ptr = asio::alloc_data::steal_and_leak(cur_ptr.ptr<asio::alloc_data>());
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
       /*
-       * Two reasons for returning our leak pointer:
+       * Two reasons for returning our leaked pointer:
        * tag is already zero, i.e. someone did the work for us
        * ptr changes, i.e. someone did the work for us
        */
@@ -235,10 +235,9 @@ public:
     // 2. Now we have a safety measure. Now Increase ref count on the loaded pointer.
     // Any call to modify this pointer will perform the work to increase the ref count. Hence,
     // this ref counting guarantees safety by default.
-    // __drop_one(desired_ptr, m);
-    return asio::shared_ptr<T>{
-      std::move(asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>()))
-    };
+    // 3. The curren thread has to try to perform the work of incresing refs before returning.
+    __drop_one(desired_ptr, m);
+    return asio::shared_ptr<T>{asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>())};
   }
 
   asio::shared_ptr<T> exchange(
@@ -300,6 +299,7 @@ public:
       return true;
     }
     e = asio::shared_ptr<T>{asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>())};
+    __drop_one(desired_ptr, m);
     return false;
   }
 
