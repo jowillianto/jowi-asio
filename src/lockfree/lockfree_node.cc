@@ -2,6 +2,7 @@ module;
 #include <atomic>
 #include <concepts>
 #include <optional>
+#include <vector>
 export module jowi.asio.lockfree:lockfree_node;
 import :shared_ptr;
 import :tagged_ptr;
@@ -102,6 +103,13 @@ namespace jowi::asio {
     ~lockfree_queue() {
       clear();
     }
+  };
+
+  export struct ringbuf_node {};
+
+  export template <class T> struct ringbuf_queue {
+  private:
+    std::vector<ringbuf_node> __node;
   };
 
   export template <class T> struct lockfree_stack {

@@ -42,6 +42,10 @@ namespace jowi::asio {
       return static_cast<T *>(__data);
     }
 
+    uint64_t ref_count() const noexcept {
+      return __rcount.load(std::memory_order_relaxed);
+    }
+
     template <class T>
     static std::unique_ptr<alloc_data, __deallocator> allocate(T *ptr, void (*deleter)(T *)) {
       return std::unique_ptr<alloc_data, __deallocator>{
@@ -53,7 +57,7 @@ namespace jowi::asio {
       const std::unique_ptr<alloc_data, __deallocator> &ptr
     ) noexcept {
       if (!ptr) return std::unique_ptr<alloc_data, __deallocator>{nullptr, __deallocator{}};
-      auto prev_value = ptr->__rcount.fetch_add(1, std::memory_order_relaxed);
+      ptr->__rcount.fetch_add(1, std::memory_order_relaxed);
       return std::unique_ptr<alloc_data, __deallocator>{ptr.get(), __deallocator{}};
     }
 
@@ -144,6 +148,9 @@ namespace jowi::asio {
     void release() {
       auto _ = __ptr.release();
     }
+    uint64_t ref_count(std::memory_order m = std::memory_order_relaxed) const noexcept {
+      return __ptr->ref_count();
+    }
 
     friend bool operator==(const shared_ptr &l, const shared_ptr &r) {
       return l.__ptr == r.__ptr;
@@ -164,33 +171,34 @@ private:
   mutable std::atomic<asio::tagged_ptr<uint16_t>> __ptr;
   using tagged_ptr = asio::tagged_ptr<uint16_t>;
 
-  // This function allows any thread to do the work to increase ref count.
-  // This create a
   /*
-   * Guarantees that tag will be zero after run. Used in exchange().
-   * compare_exchange will provide its own implementation that will check every loop.
+   * __drop_one
+   * @brief for every load performed, a deferred ref will be added to this atomic pointer, this
+   * causes the atomic pointer which already owns a ref to own more than one ref. This functions,
+   * throws away the deferred ref back into the shared pointer such that the atomic pointer will now
+   * only own one ref. This function exits returning the most current pointer when the tag is zero
+   * or if the pointer change
+   * @param cur_ptr a tagged pointer with nonzero tag.
+   * @param m memory order to use.
    */
-  inline tagged_ptr __drop_all(
-    tagged_ptr cur_ptr = tagged_ptr::from_pair(nullptr, 1),
-    asio::memory_order m = asio::memory_order_seq_cst
-  ) const noexcept {
-    while (cur_ptr.tag() != 0) {
-      cur_ptr = __drop_one(cur_ptr, m);
-    }
-    return cur_ptr;
-  }
-
   inline tagged_ptr __drop_one(tagged_ptr cur_ptr, asio::memory_order m) const {
     tagged_ptr desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
     auto stolen_ptr = asio::alloc_data::steal_and_leak(cur_ptr.ptr<asio::alloc_data>());
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
-      // someone stored a new pointer, we have to relinquish the stolen pointer.
-      // someone made the tag zero, we need to return our current copy.
+      /*
+       * Two reasons for returning our leak pointer:
+       * tag is already zero, i.e. someone did the work for us
+       * ptr changes, i.e. someone did the work for us
+       */
       if (cur_ptr.raw_ptr() != desired_ptr.raw_ptr() || cur_ptr.tag() == 0) {
         stolen_ptr.reset();
         // at this point, it is okay to even return since someone did our job.
         return cur_ptr;
-      } else {
+      }
+      /*
+       * tag changed but is still non zero.
+       * */
+      else {
         // try again since, no one has done anything to the pointer.
         desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
       }
@@ -207,6 +215,10 @@ public:
     requires(std::constructible_from<asio::shared_ptr<T>, Args...>)
   atomic(Args &&...args) : atomic(asio::shared_ptr<T>{std::forward<Args>(args)...}) {}
 
+  uint16_t deferred_ref_count() const noexcept {
+    return __ptr.load(asio::memory_order_relaxed).tag();
+  }
+
   asio::shared_ptr<T> load(asio::memory_order m = asio::memory_order::sequential) const noexcept {
     /*
       we need to force a ref count increase over here. i.e. load, increase ref count and make these
@@ -221,10 +233,9 @@ public:
       desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() + 1);
     }
     // 2. Now we have a safety measure. Now Increase ref count on the loaded pointer.
-    // Any call to modify this pointer will perform the work to increase the ref count.
-    // ah damn. we still need to perform the ritual of getting the ref to zero. This can be
-    // scheduled out and other threads might have performed this first.
-    __drop_one(desired_ptr, m);
+    // Any call to modify this pointer will perform the work to increase the ref count. Hence,
+    // this ref counting guarantees safety by default.
+    // __drop_one(desired_ptr, m);
     return asio::shared_ptr<T>{
       std::move(asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>()))
     };
@@ -241,10 +252,10 @@ public:
     tagged_ptr cur_ptr = tagged_ptr::null();
     tagged_ptr desired_ptr = tagged_ptr::from_pair(desired.__release(), 0);
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
-      // steal work
-      cur_ptr = __drop_all(cur_ptr, m);
-      // no steal
-      // cur_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), 0);
+      // if the ref count is not zero, we need to perform the work of zeroing the ref count.
+      while (cur_ptr.tag() != 0) {
+        cur_ptr = __drop_one(cur_ptr, m);
+      }
     }
     return asio::shared_ptr<T>{asio::alloc_data::steal(cur_ptr.ptr<asio::alloc_data>())};
   }
@@ -256,47 +267,39 @@ public:
   bool compare_exchange(
     asio::shared_ptr<T> &e, asio::shared_ptr<T> d, asio::memory_order m = asio::memory_order_seq_cst
   ) noexcept {
-    // Otherwise, we will perform the deed.
+    /*
+     * Expected condition to CAS, we move from no deferred e.__raw_ptr() and d.__raw_ptr()
+     */
     tagged_ptr cur_ptr = tagged_ptr::from_pair(e.__raw_ptr(), 0);
     tagged_ptr desired_ptr = tagged_ptr::from_pair(d.__raw_ptr(), 0);
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
       /*
-       * Work stealing.
+       * On failure, the following two conditions:
+       * 1. if cur_ptr != e, load with tag increase regardless.
+       * 2. if cur_ptr == e, loop tag until zero. and try again.
        */
-      // Load pointer from memory instead.
       while (cur_ptr.tag() != 0 && cur_ptr.raw_ptr() == e.__raw_ptr()) {
         cur_ptr = __drop_one(cur_ptr, m);
       }
-      if (cur_ptr.raw_ptr() == e.__raw_ptr() && cur_ptr.tag() == 0) {
+      if (cur_ptr.raw_ptr() != e.__raw_ptr()) {
+        desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() + 1);
+
+      } else {
         cur_ptr = tagged_ptr::from_pair(e.__raw_ptr(), 0);
         desired_ptr = tagged_ptr::from_pair(d.__raw_ptr(), 0);
-      } else {
-        desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() + 1);
       }
-      // no steal
-      // auto ptr = cur_ptr.ptr<asio::alloc_data>();
-      // if (ptr == e.__raw_ptr()) {
-      //   cur_ptr = tagged_ptr::from_pair(e.__raw_ptr(), 0);
-      //   desired_ptr = tagged_ptr::from_pair(d.__raw_ptr(), 0);
-      // } else {
-      //   desired_ptr = tagged_ptr::from_pair(ptr, cur_ptr.tag() + 1);
-      // }
     }
-    // On loop exit, two conditions could happen:
-    // 1. a load (a load)
-    // 2. a cas (if desired_ptr == d.__ptr, it is a cas)
-    // CAS check can be done with the tag, a nonzero tag should indicate that it is only a ref count
-    // increase.
+    /*
+     * On a loop exit:
+     * 1. tag is zero, indicating a successful change of pointer.
+     * 2. tag is non zero, indicating a load, deferring the count.
+     */
     if (desired_ptr.tag() == 0) {
-      // since it is a CAS, ignore e and proceed with leaking d.
-      // and freeing the current pointer.
       asio::alloc_data::dealloc(cur_ptr.ptr<asio::alloc_data>());
       d.__release();
       return true;
     }
-    // load case. Read from desired_ptr and preform operations.
     e = asio::shared_ptr<T>{asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>())};
-    __drop_one(desired_ptr, m);
     return false;
   }
 
@@ -313,8 +316,10 @@ public:
   }
 
   inline ~atomic() {
-    // deallocate current
-    exchange(nullptr, asio::memory_order_relaxed);
+    /*
+     * This forces releasing all the refs.
+     */
+    store(nullptr, asio::memory_order_strict);
   }
 };
 

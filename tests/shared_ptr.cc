@@ -110,6 +110,23 @@ JOWI_ADD_TEST(test_atomic_shared_ptr_hold_copy) {
   test_lib::assert_equal(drop_count, 1);
 }
 
+JOWI_ADD_TEST(test_shared_ptr_atomic_load_keep_ref) {
+  uint32_t drop_count = 0;
+  std::atomic<asio::shared_ptr<uint32_t>> ptr{&drop_count, increment_uint};
+  auto v = ptr.load();
+  test_lib::assert_equal(v.ref_count(), 1);
+}
+
+JOWI_ADD_TEST(test_shared_ptr_atomic_flush_ref) {
+  uint32_t drop_count = 0;
+  std::atomic<asio::shared_ptr<uint32_t>> ptr{&drop_count, increment_uint};
+  auto v1 = ptr.load(); // defer 1
+  auto v2 = ptr.load(); // defer 2
+  auto v3 = ptr.exchange(nullptr); // flush.
+  // now we have three copies
+  test_lib::assert_equal(v1.ref_count(), 3);
+}
+
 JOWI_ADD_TEST(test_shared_ptr_compare_exchange) {
   auto drop_count = std::pair{0u, 0u};
   auto ptr = std::pair{
