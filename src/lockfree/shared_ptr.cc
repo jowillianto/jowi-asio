@@ -168,8 +168,8 @@ namespace asio = jowi::asio;
 
 template <class T> struct std::atomic<asio::shared_ptr<T>> {
 private:
-  mutable std::atomic<asio::tagged_ptr<uint16_t>> __ptr;
-  using tagged_ptr = asio::tagged_ptr<uint16_t>;
+  mutable std::atomic<asio::tagged_ptr<uint8_t, 7>> __ptr;
+  using tagged_ptr = asio::tagged_ptr<uint8_t, 7>;
 
   /*
    * __drop_one
@@ -235,7 +235,10 @@ public:
     // 2. Now we have a safety measure. Now Increase ref count on the loaded pointer.
     // Any call to modify this pointer will perform the work to increase the ref count. Hence,
     // this ref counting guarantees safety by default.
-    // 3. The curren thread has to try to perform the work of incresing refs before returning.
+    // 3. The current thread has to try to perform the work of incresing refs before returning.
+    // Other thread could have performed this work, however, this thread has to exit with an
+    // INCREASED ref.
+    // this ensures that on exit, the reference count is guaranteed to have increased.
     __drop_one(desired_ptr, m);
     return asio::shared_ptr<T>{asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>())};
   }
@@ -251,7 +254,8 @@ public:
     tagged_ptr cur_ptr = tagged_ptr::null();
     tagged_ptr desired_ptr = tagged_ptr::from_pair(desired.__release(), 0);
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
-      // if the ref count is not zero, we need to perform the work of zeroing the ref count.
+      // if the ref count is not zero, we need to perform the work of zeroing the ref count. Unless
+      // the pointer is the same, i.e. do nothing.
       while (cur_ptr.tag() != 0) {
         cur_ptr = __drop_one(cur_ptr, m);
       }

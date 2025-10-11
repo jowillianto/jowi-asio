@@ -39,10 +39,10 @@ namespace jowi::asio {
   }
 
   export template <class D, uint8_t psize = 6>
-    requires(sizeof(D) <= (8 - psize))
+    requires(sizeof(D) <= (sizeof(void *) - psize) && psize <= sizeof(void *))
   struct tagged_ptr {
   private:
-    alignas(8) uint64_t __v;
+    alignas(sizeof(void *)) uint64_t __v;
 
     explicit tagged_ptr(uint64_t v) : __v{v} {}
 
