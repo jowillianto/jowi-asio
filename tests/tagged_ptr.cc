@@ -1,5 +1,6 @@
 #include <jowi/test_lib.hpp>
 #include <cstdint>
+#include <memory>
 import jowi.test_lib;
 import jowi.asio.lockfree;
 
@@ -74,4 +75,18 @@ JOWI_ADD_TEST(tagged_ptr_size_contract) {
   test_lib::assert_equal(
     asio::tagged_ptr<int16_t>::ptr_size(), asio::uint16_tagged_ptr::ptr_size()
   );
+}
+
+JOWI_ADD_TEST(tagged_ptr_heap_store) {
+  auto ptr = std::make_unique<int>(10);
+  auto tagged = asio::bool_tagged_ptr::from_pair(ptr.get(), true);
+  test_lib::assert_equal(tagged.raw_ptr(), ptr.get());
+}
+
+// NOTE MIGHT BREAK COMPUTER MEMORY
+JOWI_ADD_TEST(tagged_ptr_allocate_a_lot) {
+  auto n_count = test_lib::random_integer(100'000, 1'000'000);
+  auto ptr = std::make_unique<int[]>(n_count);
+  auto tagged = asio::bool_tagged_ptr::from_pair(ptr.get(), true);
+  test_lib::assert_equal(tagged.raw_ptr(), ptr.get());
 }

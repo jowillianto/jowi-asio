@@ -1,5 +1,6 @@
 module;
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <utility>
@@ -168,11 +169,11 @@ namespace asio = jowi::asio;
 
 template <class T> struct std::atomic<asio::shared_ptr<T>> {
 private:
-  mutable std::atomic<asio::tagged_ptr<uint8_t, 7>> __ptr;
-  using tagged_ptr = asio::tagged_ptr<uint8_t, 7>;
+  mutable std::atomic<asio::uint16_tagged_ptr> __ptr;
+  using tagged_ptr = asio::uint16_tagged_ptr;
 
   /*
-   * __drop_one
+   * __update_ref_count
    * @brief for every load performed, a deferred ref will be added to this atomic pointer, this
    * causes the atomic pointer which already owns a ref to own more than one ref. This functions,
    * throws away the deferred ref back into the shared pointer such that the atomic pointer will now
@@ -181,32 +182,17 @@ private:
    * @param cur_ptr a tagged pointer with nonzero tag.
    * @param m memory order to use.
    */
-  inline tagged_ptr __drop_one(tagged_ptr cur_ptr, asio::memory_order m) const {
+  inline void __update_ref_count(tagged_ptr cur_ptr, asio::memory_order m) const {
     tagged_ptr desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
-    auto stolen_ptr = asio::alloc_data::steal_and_leak(cur_ptr.ptr<asio::alloc_data>());
+    // load or compare_exchange that loads will directly call this function, which guarantees that
+    // the pointer is already deferred.
+    auto _ = asio::alloc_data::steal_and_leak(cur_ptr.ptr<asio::alloc_data>()).release();
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
-      /*
-       * Two reasons for returning our leaked pointer:
-       * tag is already zero, i.e. someone did the work for us
-       * ptr changes, i.e. someone did the work for us
-       */
-      if (cur_ptr.raw_ptr() != desired_ptr.raw_ptr() || cur_ptr.tag() == 0) {
-        stolen_ptr.reset();
-        // at this point, it is okay to even return since someone did our job.
-        return cur_ptr;
-      }
-      /*
-       * tag changed but is still non zero.
-       * */
-      else {
-        // try again since, no one has done anything to the pointer.
-        desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
-      }
+      // try again since, no one has done anything to the pointer.
+      desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
     }
     // on successful set, leak the pointer. in zero or changed case, the pointer itself is already
     // empty.
-    auto _ = stolen_ptr.release();
-    return desired_ptr;
   }
 
 public:
@@ -215,11 +201,7 @@ public:
     requires(std::constructible_from<asio::shared_ptr<T>, Args...>)
   atomic(Args &&...args) : atomic(asio::shared_ptr<T>{std::forward<Args>(args)...}) {}
 
-  uint16_t deferred_ref_count() const noexcept {
-    return __ptr.load(asio::memory_order_relaxed).tag();
-  }
-
-  asio::shared_ptr<T> load(asio::memory_order m = asio::memory_order::sequential) const noexcept {
+  asio::shared_ptr<T> load(asio::memory_order m = asio::memory_order::sequential) const {
     /*
       we need to force a ref count increase over here. i.e. load, increase ref count and make these
       two operation atomic. We can do this by increasing ref count and decreasing the ref count. We
@@ -239,13 +221,13 @@ public:
     // Other thread could have performed this work, however, this thread has to exit with an
     // INCREASED ref.
     // this ensures that on exit, the reference count is guaranteed to have increased.
-    __drop_one(desired_ptr, m);
+    __update_ref_count(desired_ptr, m);
     return asio::shared_ptr<T>{asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>())};
   }
 
   asio::shared_ptr<T> exchange(
     asio::shared_ptr<T> desired, asio::memory_order m = asio::memory_order::sequential
-  ) noexcept {
+  ) {
     /*
       exchange is easy to implement as we do not need to force a ref count increase. Otherwise,
       we need to force a ref count increase. It is a requirement that a thread cannot be loading
@@ -254,22 +236,19 @@ public:
     tagged_ptr cur_ptr = tagged_ptr::null();
     tagged_ptr desired_ptr = tagged_ptr::from_pair(desired.__release(), 0);
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
-      // if the ref count is not zero, we need to perform the work of zeroing the ref count. Unless
-      // the pointer is the same, i.e. do nothing.
-      while (cur_ptr.tag() != 0) {
-        cur_ptr = __drop_one(cur_ptr, m);
-      }
+      // We can only swap if all of the deferred ref count is zero.
+      cur_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), 0);
     }
     return asio::shared_ptr<T>{asio::alloc_data::steal(cur_ptr.ptr<asio::alloc_data>())};
   }
   inline void store(
     asio::shared_ptr<T> desired, asio::memory_order m = asio::memory_order::sequential
-  ) noexcept {
+  ) {
     exchange(desired, m);
   }
   bool compare_exchange(
     asio::shared_ptr<T> &e, asio::shared_ptr<T> d, asio::memory_order m = asio::memory_order_seq_cst
-  ) noexcept {
+  ) {
     /*
      * Expected condition to CAS, we move from no deferred e.__raw_ptr() and d.__raw_ptr()
      */
@@ -281,12 +260,8 @@ public:
        * 1. if cur_ptr != e, load with tag increase regardless.
        * 2. if cur_ptr == e, loop tag until zero. and try again.
        */
-      while (cur_ptr.tag() != 0 && cur_ptr.raw_ptr() == e.__raw_ptr()) {
-        cur_ptr = __drop_one(cur_ptr, m);
-      }
       if (cur_ptr.raw_ptr() != e.__raw_ptr()) {
         desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() + 1);
-
       } else {
         cur_ptr = tagged_ptr::from_pair(e.__raw_ptr(), 0);
         desired_ptr = tagged_ptr::from_pair(d.__raw_ptr(), 0);
@@ -303,19 +278,19 @@ public:
       return true;
     }
     e = asio::shared_ptr<T>{asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>())};
-    __drop_one(desired_ptr, m);
+    __update_ref_count(desired_ptr, m);
     return false;
   }
 
   inline bool compare_exchange_weak(
     asio::shared_ptr<T> &e, asio::shared_ptr<T> d, asio::memory_order m = asio::memory_order_seq_cst
-  ) noexcept {
+  ) {
     return compare_exchange(e, d, m);
   }
 
   inline bool compare_exchange_strong(
     asio::shared_ptr<T> &e, asio::shared_ptr<T> d, asio::memory_order m = asio::memory_order_seq_cst
-  ) noexcept {
+  ) {
     return compare_exchange(e, d, m);
   }
 

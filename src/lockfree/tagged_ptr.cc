@@ -38,8 +38,14 @@ namespace jowi::asio {
       return std::memory_order_acquire;
   }
 
+  export template <class D, uint8_t ptr_size>
+  concept taggable = requires() {
+    ptr_size <= sizeof(void *);
+    sizeof(D) <= sizeof(void *) - ptr_size;
+  };
+
   export template <class D, uint8_t psize = 6>
-    requires(sizeof(D) <= (sizeof(void *) - psize) && psize <= sizeof(void *))
+    requires(taggable<D, psize>)
   struct tagged_ptr {
   private:
     alignas(sizeof(void *)) uint64_t __v;
@@ -65,9 +71,7 @@ namespace jowi::asio {
       return ptr_size() * 8;
     }
     void *raw_ptr() const noexcept {
-      return reinterpret_cast<void *>(
-        static_cast<int64_t>(__v << tag_bit_size()) >> tag_bit_size()
-      );
+      return reinterpret_cast<void *>((__v << tag_bit_size()) >> tag_bit_size());
     }
     template <class T> T *ptr() const noexcept {
       return static_cast<T *>(raw_ptr());
@@ -130,7 +134,7 @@ namespace jowi::asio {
 namespace asio = jowi::asio;
 
 template <class D, uint8_t psize>
-  requires(sizeof(D) <= (8 - psize))
+  requires(asio::taggable<D, psize>)
 struct std::atomic<asio::tagged_ptr<D, psize>> {
 private:
   std::atomic<uint64_t> __v;

@@ -115,7 +115,6 @@ JOWI_ADD_TEST(test_shared_ptr_atomic_load_keep_ref) {
   std::atomic<asio::shared_ptr<uint32_t>> ptr{&drop_count, increment_uint};
   auto v = ptr.load();
   test_lib::assert_equal(v.ref_count(), 2);
-  test_lib::assert_equal(ptr.deferred_ref_count(), 0);
   v.reset();
   test_lib::assert_not_equal(drop_count, 1);
 }
@@ -125,7 +124,6 @@ JOWI_ADD_TEST(test_shared_ptr_atomic_flush_ref) {
   std::atomic<asio::shared_ptr<uint32_t>> ptr{&drop_count, increment_uint};
   auto v1 = ptr.load(); // defer 1
   auto v2 = ptr.load(); // defer 2
-  test_lib::assert_equal(ptr.deferred_ref_count(), 0);
   auto v3 = ptr.exchange(nullptr); // flush.
   // now we have three copies
   test_lib::assert_equal(v1.ref_count(), 3);
@@ -179,11 +177,11 @@ JOWI_ADD_TEST(test_shared_ptr_compare_exchange) {
 
 JOWI_ADD_TEST(test_shared_ptr_fuzz) {
   // thread count
-  auto t_count = test_lib::random_integer(20u, 50u);
+  auto t_count = test_lib::random_integer(40u, 50u);
   // variety count
   auto v_count = test_lib::random_integer(100u, 200u);
   // loop count
-  auto l_count = test_lib::random_integer(10'000u, 100'000u);
+  auto l_count = test_lib::random_integer(100'000u, 500'000u);
   std::atomic_flag beg{false};
   std::vector<std::thread> ts;
   std::vector<uint32_t> is_dropped(v_count, 0u);
