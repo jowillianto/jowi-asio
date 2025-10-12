@@ -24,17 +24,32 @@ void configure_logger(bool verbose) {
   }
 }
 
-void run_lfq(uint32_t t_count, uint32_t l_count) {
+bool get_op(std::atomic<uint32_t> &n_op) {
+  uint32_t cur_n_op = 1;
+  uint32_t desired_n_op = 0;
+  while (!n_op.compare_exchange_weak(
+    cur_n_op, desired_n_op, std::memory_order_acq_rel, std::memory_order_acquire
+  )) {
+    if (cur_n_op == 0) {
+      return false;
+    }
+    desired_n_op = cur_n_op - 1;
+  }
+  return true;
+}
+
+void run_lfq(uint32_t t_count, uint32_t n_op) {
   std::atomic_flag beg{false};
   std::atomic<uint32_t> push_count{0};
   std::atomic<uint32_t> pop_count{0};
+  std::atomic<uint32_t> op_count{n_op};
   asio::lockfree_queue<uint32_t> lfq{};
   std::vector<std::thread> ts;
   ts.reserve(t_count);
-  auto loop = [&, l_count]() mutable {
+  auto loop = [&]() mutable {
     while (!beg.test(std::memory_order_acquire)) {
     }
-    while (l_count--) {
+    while (get_op(op_count)) {
       // action to perform
       auto act = test_lib::random_integer(0, 1);
       if (act == 0) {
@@ -87,18 +102,19 @@ void run_lfq(uint32_t t_count, uint32_t l_count) {
   crogger::info(crogger::msg{"pop: {}", pop_count.load(std::memory_order_acquire)});
 }
 
-void run_mq(uint32_t t_count, uint32_t l_count) {
+void run_mq(uint32_t t_count, uint32_t n_op) {
   std::atomic_flag beg{false};
   std::atomic<uint32_t> push_count{0};
   std::atomic<uint32_t> pop_count{0};
+  std::atomic<uint32_t> op_count{n_op};
   std::queue<uint32_t> q{};
   std::mutex m;
   std::vector<std::thread> ts;
   ts.reserve(t_count);
-  auto loop = [&, l_count]() mutable {
+  auto loop = [&]() mutable {
     while (!beg.test(std::memory_order_acquire)) {
     }
-    while (l_count--) {
+    while (get_op(op_count)) {
       // action to perform
       auto act = test_lib::random_integer(0, 1);
       if (act == 0) {
@@ -171,8 +187,8 @@ int main(int argc, const char **argv) {
     .help("The amount of threads to run the benchmark on. Default: 20")
     .require_value()
     .optional();
-  app.add_argument("--lcount")
-    .help("Amount of loops in each thread. Default: 10,000")
+  app.add_argument("--n_op")
+    .help("Amount of loops in each thread. Default: 1,000,000")
     .require_value()
     .optional();
   app.add_argument("--verbose").help("Print ALL DEBUG MESSAGES").as_flag();
@@ -180,17 +196,17 @@ int main(int argc, const char **argv) {
 
   auto t_count =
     app.expect(app.args().first_of("--tcount").transform(&cli::parse_arg<uint32_t>).value_or(20u));
-  auto l_count = app.expect(
-    app.args().first_of("--lcount").transform(cli::parse_arg<uint32_t>).value_or(10'000u)
+  auto n_op = app.expect(
+    app.args().first_of("--n_op").transform(cli::parse_arg<uint32_t>).value_or(1'000'000u)
   );
   auto verbose = app.args().contains("--verbose");
   configure_logger(verbose);
 
   crogger::info(crogger::msg{"thread_count: {}", t_count});
-  crogger::info(crogger::msg{"loop_count: {}", l_count});
+  crogger::info(crogger::msg{"n_op: {}", n_op});
 
   crogger::info(crogger::msg{"Lock Free Implementation: "});
-  run_lfq(t_count, l_count);
+  run_lfq(t_count, n_op);
   crogger::info(crogger::msg{"Mutex Implementation: "});
-  run_mq(t_count, l_count);
+  run_mq(t_count, n_op);
 }

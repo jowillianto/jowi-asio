@@ -70,22 +70,22 @@ namespace jowi::asio {
     static consteval uint32_t ptr_bit_size() {
       return ptr_size() * 8;
     }
-    void *raw_ptr() const noexcept {
+    inline void *raw_ptr() const noexcept {
       return reinterpret_cast<void *>((__v << tag_bit_size()) >> tag_bit_size());
     }
-    template <class T> T *ptr() const noexcept {
+    template <class T> inline T *ptr() const noexcept {
       return static_cast<T *>(raw_ptr());
     }
-    uint16_t raw_tag() const noexcept {
+    inline uint16_t raw_tag() const noexcept {
       return static_cast<uint16_t>(__v >> ptr_bit_size());
     }
-    D tag() const noexcept {
+    inline D tag() const noexcept {
       return static_cast<D>(raw_tag());
     }
-    std::pair<void *, D> to_raw_pair() const noexcept {
+    inline std::pair<void *, D> to_raw_pair() const noexcept {
       return std::pair{raw_ptr(), tag()};
     }
-    template <class T> std::pair<T *, D> to_pair() const noexcept {
+    template <class T> inline std::pair<T *, D> to_pair() const noexcept {
       return std::pair{ptr<T>(), tag()};
     }
 
@@ -112,11 +112,11 @@ namespace jowi::asio {
       return tagged_ptr{v | long_tag};
     }
 
-    static tagged_ptr null() {
+    inline static tagged_ptr null() {
       return tagged_ptr{0};
     }
 
-    static tagged_ptr null_tag(void *ptr) {
+    inline static tagged_ptr null_tag(void *ptr) {
       return tagged_ptr{(reinterpret_cast<uint64_t>(ptr) << tag_bit_size()) >> tag_bit_size()};
     }
   };

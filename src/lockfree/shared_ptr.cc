@@ -172,29 +172,6 @@ private:
   mutable std::atomic<asio::uint16_tagged_ptr> __ptr;
   using tagged_ptr = asio::uint16_tagged_ptr;
 
-  /*
-   * __update_ref_count
-   * @brief for every load performed, a deferred ref will be added to this atomic pointer, this
-   * causes the atomic pointer which already owns a ref to own more than one ref. This functions,
-   * throws away the deferred ref back into the shared pointer such that the atomic pointer will now
-   * only own one ref. This function exits returning the most current pointer when the tag is zero
-   * or if the pointer change
-   * @param cur_ptr a tagged pointer with nonzero tag.
-   * @param m memory order to use.
-   */
-  inline void __update_ref_count(tagged_ptr cur_ptr, asio::memory_order m) const {
-    tagged_ptr desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
-    // load or compare_exchange that loads will directly call this function, which guarantees that
-    // the pointer is already deferred.
-    auto _ = asio::alloc_data::steal_and_leak(cur_ptr.ptr<asio::alloc_data>()).release();
-    while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
-      // try again since, no one has done anything to the pointer.
-      desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
-    }
-    // on successful set, leak the pointer. in zero or changed case, the pointer itself is already
-    // empty.
-  }
-
 public:
   atomic(asio::shared_ptr<T> ptr) noexcept : __ptr{tagged_ptr::from_pair(ptr.__ptr.release(), 0)} {}
   template <class... Args>
@@ -221,7 +198,14 @@ public:
     // Other thread could have performed this work, however, this thread has to exit with an
     // INCREASED ref.
     // this ensures that on exit, the reference count is guaranteed to have increased.
-    __update_ref_count(desired_ptr, m);
+    // __update_ref_count(desired_ptr, m);
+    cur_ptr = desired_ptr;
+    desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
+    auto _ = asio::alloc_data::steal_and_leak(cur_ptr.ptr<asio::alloc_data>()).release();
+    while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
+      // try again since, no one has done anything to the pointer.
+      desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
+    }
     return asio::shared_ptr<T>{asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>())};
   }
 
@@ -278,7 +262,13 @@ public:
       return true;
     }
     e = asio::shared_ptr<T>{asio::alloc_data::steal(desired_ptr.ptr<asio::alloc_data>())};
-    __update_ref_count(desired_ptr, m);
+    cur_ptr = desired_ptr;
+    desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
+    auto _ = asio::alloc_data::steal_and_leak(cur_ptr.ptr<asio::alloc_data>()).release();
+    while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
+      // try again since, no one has done anything to the pointer.
+      desired_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), cur_ptr.tag() - 1);
+    }
     return false;
   }
 
