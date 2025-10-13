@@ -16,7 +16,9 @@ target_sources(jowi_asio_lockfree
         FILES
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/shared_ptr.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/tagged_ptr.cc
-            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/lockfree_node.cc
+            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/lockfree_queue.cc
+            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/ringbuf_queue.cc
+            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/unique_ptr.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/main.cc
 )
 target_compile_features (jowi_asio_lockfree PUBLIC cxx_std_23)

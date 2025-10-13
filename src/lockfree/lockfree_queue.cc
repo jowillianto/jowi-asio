@@ -3,30 +3,33 @@ module;
 #include <concepts>
 #include <optional>
 #include <vector>
-export module jowi.asio.lockfree:lockfree_node;
+export module jowi.asio.lockfree:lockfree_queue;
 import :shared_ptr;
 import :tagged_ptr;
 
 namespace jowi::asio {
-  template <class T> struct lockfree_node {
+  template <class T> struct lockfree_queue_node {
   private:
-    using This = lockfree_node;
+    using This = lockfree_queue_node;
     std::optional<T> __value;
 
   public:
     std::atomic<shared_ptr<This>> next;
     template <class... Args>
       requires(std::constructible_from<std::optional<T>, Args...>)
-    lockfree_node(shared_ptr<This> next = nullptr, Args &&...args) :
+    lockfree_queue_node(shared_ptr<This> next = nullptr, Args &&...args) :
       __value(std::forward<Args>(args)...), next(std::move(next)) {}
     T move_value() {
       return std::move(__value).value();
     }
   };
-
+  /*
+   * lockfree queue implementation based on the michael-scott queue with ref count memory
+   * reclamation.
+   */
   export template <class T> struct lockfree_queue {
   private:
-    using node_type = lockfree_node<T>;
+    using node_type = lockfree_queue_node<T>;
     node_type __head;
     std::atomic<shared_ptr<node_type>> __tail;
     std::atomic<uint64_t> __size;
@@ -102,27 +105,6 @@ namespace jowi::asio {
 
     ~lockfree_queue() {
       clear();
-    }
-  };
-
-  export struct ringbuf_node {};
-
-  export template <class T> struct ringbuf_queue {
-  private:
-    std::vector<ringbuf_node> __node;
-  };
-
-  export template <class T> struct lockfree_stack {
-  private:
-    using node_type = lockfree_node<T>;
-    node_type __head;
-    std::atomic<uint64_t> __size;
-
-  public:
-    lockfree_stack() : __head{}, __size{0} {}
-
-    uint64_t size(std::memory_order m = std::memory_order_seq_cst) const noexcept {
-      return __size.load(m);
     }
   };
 }
