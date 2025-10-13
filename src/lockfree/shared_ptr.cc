@@ -223,7 +223,6 @@ public:
     while (!__ptr.compare_exchange_weak(cur_ptr, desired_ptr, m)) {
       // We can only swap if all of the deferred ref count is zero.
       cur_ptr = tagged_ptr::from_pair(cur_ptr.raw_ptr(), 0);
-      std::this_thread::yield();
     }
     return asio::shared_ptr<T>{asio::alloc_data::steal(cur_ptr.ptr<asio::alloc_data>())};
   }
@@ -251,7 +250,6 @@ public:
       } else {
         cur_ptr = tagged_ptr::from_pair(e.__raw_ptr(), 0);
         desired_ptr = tagged_ptr::from_pair(d.__raw_ptr(), 0);
-        std::this_thread::yield();
       }
     }
     /*
