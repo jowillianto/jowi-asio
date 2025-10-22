@@ -20,8 +20,9 @@ namespace jowi::asio {
       } catch (const std::exception &e) {
         return e.what();
       }
-
-      // CODE THAT WILL NEVER BE EXECUTED.
+      /*
+       * This will never be executed.
+       */
       return nullptr;
     }
 
@@ -33,8 +34,8 @@ namespace jowi::asio {
     probably useless definition
   */
   template <class promise_type>
-  concept promise = requires(const std::decay_t<promise_type> cp, std::decay_t<promise_type> p) {
-    { std::declval<typename promise_type::value_type>() };
+  concept promise = requires(const promise_type cp, promise_type p) {
+    { std::declval<typename promise_type::value_type>() }; // promise return value type.
     { std::declval<typename promise_type::task_type>() };
     { p.get_return_object() } -> std::same_as<typename promise_type::task_type>;
     { p.initial_suspend() } -> awaitable;
@@ -46,8 +47,13 @@ namespace jowi::asio {
     } -> std::same_as<std::expected<typename promise_type::value_type, task_error>>;
   };
 
-  template <class task_type>
-  concept task = requires(const std::decay_t<task_type> ct, std::decay_t<task_type> t) {
+  export template <class task_type, class promise_type>
+  concept from_promiseable = requires(promise_type &p) {
+    { task_type::from_promise(p) } -> std::same_as<task_type>;
+  };
+
+  export template <class task_type>
+  concept task = requires(const task_type ct, task_type t) {
     promise<typename task_type::promise_type>;
     { ct.is_complete() } -> std::same_as<bool>;
     { t.value() } -> std::same_as<typename task_type::promise_type::value_type>;
@@ -59,9 +65,10 @@ namespace jowi::asio {
     } -> std::same_as<task_type>;
   };
 
-  template <task task_type>
+  export template <task task_type>
   using task_result_type = std::invoke_result_t<decltype(&task_type::value), task_type *>;
-  template <task task_type>
+
+  export template <task task_type>
   using task_expected_type =
     std::invoke_result_t<decltype(&task_type::expected_value), task_type *>;
 }

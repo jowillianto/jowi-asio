@@ -3,7 +3,6 @@ module;
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <thread>
 #include <utility>
 export module jowi.asio.lockfree:shared_ptr;
 import :tagged_ptr;
@@ -138,10 +137,14 @@ namespace jowi::asio {
     T *operator->() const noexcept {
       return get();
     }
-    const T &operator*() const noexcept {
+    const auto &operator*() const noexcept
+      requires(!std::same_as<T, void>)
+    {
       return *get();
     }
-    T &operator*() noexcept {
+    auto &operator*() noexcept
+      requires(!std::same_as<T, void>)
+    {
       return *get();
     }
     void reset() {

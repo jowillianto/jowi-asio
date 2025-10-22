@@ -2,7 +2,6 @@ module;
 #include <atomic>
 #include <concepts>
 #include <optional>
-#include <vector>
 export module jowi.asio.lockfree:lockfree_queue;
 import :shared_ptr;
 import :tagged_ptr;
@@ -17,8 +16,7 @@ namespace jowi::asio {
     std::atomic<shared_ptr<This>> next;
     template <class... Args>
       requires(std::constructible_from<std::optional<T>, Args...>)
-    lockfree_queue_node(shared_ptr<This> next = nullptr, Args &&...args) :
-      __value(std::forward<Args>(args)...), next(std::move(next)) {}
+    lockfree_queue_node(Args &&...args) : __value{std::forward<Args>(args)...}, next{nullptr} {}
     T move_value() {
       return std::move(__value).value();
     }
@@ -59,12 +57,12 @@ namespace jowi::asio {
     }
 
   public:
-    lockfree_queue() : __head{nullptr, std::nullopt}, __tail{&__head, [](auto *) {}}, __size{0} {}
+    lockfree_queue() : __head{std::nullopt}, __tail{&__head, [](auto *) {}}, __size{0} {}
 
     template <class... Args>
       requires(std::constructible_from<T, Args...>)
     void push(Args &&...args) {
-      auto new_node = make_shared<node_type>(nullptr, std::forward<Args>(args)...);
+      auto new_node = asio::make_shared<node_type>(std::forward<Args>(args)...);
       /*
        * 1. Find the tail (i.e. node which next node is nullptr)
        * 2. CAS

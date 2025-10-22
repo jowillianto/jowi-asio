@@ -80,7 +80,11 @@ namespace jowi::asio {
       return static_cast<uint16_t>(__v >> ptr_bit_size());
     }
     inline D tag() const noexcept {
-      return static_cast<D>(raw_tag());
+      uint16_t raw = raw_tag();
+      /**
+       * SAFETY: we are reading the bits in uint16_t in terms of D.
+       */
+      return *static_cast<D *>(static_cast<void *>(&raw));
     }
     inline std::pair<void *, D> to_raw_pair() const noexcept {
       return std::pair{raw_ptr(), tag()};
@@ -93,7 +97,7 @@ namespace jowi::asio {
      * bitwise comparison operator
      */
     constexpr friend bool operator==(const tagged_ptr &l, const tagged_ptr &r) {
-      return l == r;
+      return l.__v == r.__v;
     }
     constexpr friend std::partial_ordering operator<=>(const tagged_ptr &l, const tagged_ptr &r) {
       if (l == r) {

@@ -170,6 +170,70 @@ void run_mq(uint32_t t_count, uint32_t n_op) {
   crogger::info(crogger::msg{"pop: {}", pop_count.load(std::memory_order_acquire)});
 }
 
+void run_rbf(uint32_t t_count, uint32_t n_op, uint32_t buf_size) {
+  std::atomic_flag beg{false};
+  std::atomic<uint32_t> push_count{0};
+  std::atomic<uint32_t> pop_count{0};
+  std::atomic<uint32_t> op_count{n_op};
+  asio::ringbuf_queue<uint32_t> lfq{buf_size};
+  std::vector<std::thread> ts;
+  ts.reserve(t_count);
+  auto loop = [&]() mutable {
+    while (!beg.test(std::memory_order_acquire)) {
+    }
+    while (get_op(op_count)) {
+      // action to perform
+      auto act = test_lib::random_integer(0, 1);
+      if (act == 0) {
+        lfq.push(std::make_unique<uint32_t>(test_lib::random_integer(0u, UINT_MAX)));
+        push_count.fetch_add(1, std::memory_order_relaxed);
+      } else {
+        if (lfq.pop()) {
+          pop_count.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+    }
+  };
+
+  crogger::debug(crogger::msg{"thread_setup_begin"});
+  auto start_time = std::chrono::steady_clock::now();
+  for (uint32_t i = 0; i != t_count; i += 1) {
+    ts.emplace_back(loop);
+  }
+  auto end_time = std::chrono::steady_clock::now();
+  crogger::debug(crogger::msg{"thread_setup_end"});
+  crogger::info(
+    crogger::msg{
+      "thread_pool_setup: {:.3f}ms",
+      static_cast<double>(
+        std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
+      ) /
+        1000.
+    }
+  );
+
+  crogger::debug(crogger::msg{"thread_run_begin"});
+  start_time = std::chrono::steady_clock::now();
+  beg.test_and_set(std::memory_order_release);
+  for (uint32_t i = 0; i != t_count; i += 1) {
+    ts[i].join();
+  }
+  end_time = std::chrono::steady_clock::now();
+  crogger::debug(crogger::msg{"thread_run_end"});
+
+  crogger::info(
+    crogger::msg{
+      "fuzz_time: {:.3f}ms",
+      static_cast<double>(
+        std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
+      ) /
+        1000.
+    }
+  );
+  crogger::info(crogger::msg{"push: {}", push_count.load(std::memory_order_acquire)});
+  crogger::info(crogger::msg{"pop: {}", pop_count.load(std::memory_order_acquire)});
+}
+
 int main(int argc, const char **argv) {
   auto app = cli::app{
     cli::app_identity{
@@ -191,6 +255,10 @@ int main(int argc, const char **argv) {
     .help("Amount of loops in each thread. Default: 1,000,000")
     .require_value()
     .optional();
+  app.add_argument("--buf_size")
+    .help("The buffer size for the ringbuf queue. Default: 4096")
+    .require_value()
+    .optional();
   app.add_argument("--verbose").help("Print ALL DEBUG MESSAGES").as_flag();
   app.parse_args();
 
@@ -199,12 +267,18 @@ int main(int argc, const char **argv) {
   auto n_op = app.expect(
     app.args().first_of("--n_op").transform(cli::parse_arg<uint32_t>).value_or(1'000'000u)
   );
+  auto buf_size = app.expect(
+    app.args().first_of("--buf_size").transform(cli::parse_arg<uint32_t>).value_or(4096)
+  );
   auto verbose = app.args().contains("--verbose");
   configure_logger(verbose);
 
   crogger::info(crogger::msg{"thread_count: {}", t_count});
   crogger::info(crogger::msg{"n_op: {}", n_op});
+  crogger::info(crogger::msg{"buf_size: {}", buf_size});
 
+  crogger::info(crogger::msg{"Ring Buffer Implementation: "});
+  run_rbf(t_count, n_op, buf_size);
   crogger::info(crogger::msg{"Lock Free Implementation: "});
   run_lfq(t_count, n_op);
   crogger::info(crogger::msg{"Mutex Implementation: "});

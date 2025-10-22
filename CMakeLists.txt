@@ -19,6 +19,7 @@ target_sources(jowi_asio_lockfree
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/lockfree_queue.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/ringbuf_queue.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/unique_ptr.cc
+            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/bit_tuple.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/main.cc
 )
 target_compile_features (jowi_asio_lockfree PUBLIC cxx_std_23)
@@ -33,8 +34,9 @@ target_sources (${PROJECT_NAME}
       ${CMAKE_CURRENT_LIST_DIR}/src/awaitables.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/main.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/task.cc
-      ${CMAKE_CURRENT_LIST_DIR}/src/basic_task.cc
+      ${CMAKE_CURRENT_LIST_DIR}/src/unique_task.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/event_loop.cc
+      ${CMAKE_CURRENT_LIST_DIR}/src/basic_promise.cc
 )
 target_link_libraries (jowi_asio PRIVATE jowi::asio_lockfree)
 target_compile_features (${PROJECT_NAME} PUBLIC cxx_std_23)
@@ -61,6 +63,11 @@ if (JOWI_ASIO_BUILD_TESTS)
   )
   jowi_add_test(test_jowi_asio_lockfree_queue
       ${CMAKE_CURRENT_LIST_DIR}/tests/lockfree_queue.cc
+      LIBRARIES jowi::asio_lockfree
+      SANITIZERS all
+  )
+  jowi_add_test(test_jowi_asio_ringbuf_queue
+      ${CMAKE_CURRENT_LIST_DIR}/tests/ringbuf_queue.cc
       LIBRARIES jowi::asio_lockfree
       SANITIZERS all
   )
