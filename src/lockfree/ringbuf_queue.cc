@@ -106,9 +106,7 @@ namespace jowi::asio {
        * pointer should never move the push pointer to overlap with the pop pointer, the operation
        * will block otherwise.
        */
-      while (!__counter.compare_exchange_weak(
-        e_point, d_point, std::memory_order_acq_rel, std::memory_order_acquire
-      )) {
+      while (!__counter.compare_exchange_weak(e_point, d_point, asio::memory_order_strict)) {
         uint32_t d_push_point = (e_point.get<0>() + 1) % capacity();
         if (d_push_point == e_point.get<1>()) {
           // no advance
@@ -124,15 +122,19 @@ namespace jowi::asio {
       __nodes[e_point.get<0>()].blocking_store(std::move(ptr), asio::memory_order_strict);
     }
 
+    template <class... Args>
+      requires(std::constructible_from<T, Args...> && std::same_as<D, std::default_delete<T>>)
+    void push(Args &&...args) {
+      push(std::make_unique<T>(std::forward<Args>(args)...));
+    }
+
     std::optional<std::unique_ptr<T, D>> try_push(std::unique_ptr<T, D> ptr) {
       pointer_type e_point{0, 0};
       pointer_type d_point{1, 0};
       /*
        * Quit loop when there is no space.
        */
-      while (!__counter.compare_exchange_weak(
-        e_point, d_point, std::memory_order_acq_rel, std::memory_order_acquire
-      )) {
+      while (!__counter.compare_exchange_weak(e_point, d_point, asio::memory_order_strict)) {
         uint32_t d_push_point = (e_point.get<0>() + 1) % capacity();
         if (d_push_point == e_point.get<1>()) {
           // no advance
@@ -145,12 +147,16 @@ namespace jowi::asio {
       return std::nullopt;
     }
 
+    template <class... Args>
+      requires(std::constructible_from<T, Args...> && std::same_as<D, std::default_delete<T>>)
+    std::optional<std::unique_ptr<T, D>> try_push(Args &&...args) {
+      return try_push(std::make_unique<T>(std::forward<Args>(args)...));
+    }
+
     std::optional<std::unique_ptr<T, D>> pop() {
       pointer_type e_point{1, 0};
       pointer_type d_point{1, 1};
-      while (!__counter.compare_exchange_weak(
-        e_point, d_point, std::memory_order_acq_rel, std::memory_order_acquire
-      )) {
+      while (!__counter.compare_exchange_weak(e_point, d_point, asio::memory_order_strict)) {
         uint32_t d_pop_point = (e_point.get<1>() + 1) % capacity();
         // no advance. cannot pop if is equal
         if (e_point.get<0>() == e_point.get<1>()) {

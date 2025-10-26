@@ -18,7 +18,6 @@ target_sources(jowi_asio_lockfree
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/tagged_ptr.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/lockfree_queue.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/ringbuf_queue.cc
-            ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/unique_ptr.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/bit_tuple.cc
             ${CMAKE_CURRENT_LIST_DIR}/src/lockfree/main.cc
 )
@@ -36,6 +35,7 @@ target_sources (${PROJECT_NAME}
       ${CMAKE_CURRENT_LIST_DIR}/src/task.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/unique_task.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/event_loop.cc
+      ${CMAKE_CURRENT_LIST_DIR}/src/executor.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/basic_promise.cc
 )
 target_link_libraries (jowi_asio PRIVATE jowi::asio_lockfree)

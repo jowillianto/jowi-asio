@@ -26,7 +26,7 @@ JOWI_ADD_TEST(test_no_push_full) {
   asio::ringbuf_queue<uint32_t> rbq{1};
   uint32_t num = test_lib::random_integer(0u, UINT_MAX);
   rbq.push(num);
-  test_lib::assert_false(rbq.try_push(10));
+  test_lib::assert_true(rbq.try_push(10).has_value());
   test_lib::assert_equal(*rbq.pop().value(), num);
 }
 
@@ -52,7 +52,7 @@ JOWI_ADD_TEST(test_single_thread_fuzz) {
     rbq.push(num);
   }
   for (uint32_t i = 0; i != l_count; i += 1) {
-    test_lib::assert_equal(q.front(), rbq.pop().value());
+    test_lib::assert_equal(q.front(), *rbq.pop().value());
     q.pop();
   }
 }

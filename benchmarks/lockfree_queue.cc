@@ -185,7 +185,7 @@ void run_rbf(uint32_t t_count, uint32_t n_op, uint32_t buf_size) {
       // action to perform
       auto act = test_lib::random_integer(0, 1);
       if (act == 0) {
-        lfq.push(std::make_unique<uint32_t>(test_lib::random_integer(0u, UINT_MAX)));
+        lfq.push(test_lib::random_integer(0u, UINT_MAX));
         push_count.fetch_add(1, std::memory_order_relaxed);
       } else {
         if (lfq.pop()) {
