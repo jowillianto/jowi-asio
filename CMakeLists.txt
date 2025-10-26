@@ -36,7 +36,6 @@ target_sources (${PROJECT_NAME}
       ${CMAKE_CURRENT_LIST_DIR}/src/unique_task.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/event_loop.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/executor.cc
-      ${CMAKE_CURRENT_LIST_DIR}/src/basic_promise.cc
 )
 target_link_libraries (jowi_asio PRIVATE jowi::asio_lockfree)
 target_compile_features (${PROJECT_NAME} PUBLIC cxx_std_23)

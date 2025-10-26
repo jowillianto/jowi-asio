@@ -57,7 +57,7 @@ namespace jowi::asio {
     promise<typename task_type::promise_type>;
     { ct.is_complete() } -> std::same_as<bool>;
     { t.value() } -> std::same_as<typename task_type::promise_type::value_type>;
-    { t.raw_coro() } -> std::same_as<std::coroutine_handle<void>>;
+    { ct.raw_coro() } -> std::same_as<std::coroutine_handle<void>>;
     {
       t.expected_value()
     } -> std::same_as<std::expected<typename task_type::promise_type::value_type, task_error>>;

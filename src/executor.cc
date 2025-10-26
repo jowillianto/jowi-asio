@@ -8,7 +8,7 @@ import jowi.asio.lockfree;
 import :event_loop;
 
 namespace jowi::asio {
-  struct pool_worker {
+  export struct pool_worker {
   private:
     std::thread __t;
     /*
@@ -19,33 +19,13 @@ namespace jowi::asio {
     using state_type = bit_tuple<bool, bool>;
     std::atomic<state_type> __state;
 
-    void __work() const noexcept {
-      state_type state = __state.load(asio::memory_order_strict);
-      /*
-       * This protects against two cases:
-       * - thread has been signaled to start
-       * - thread signaled to stop directly.
-       */
-      while (!state.get<0>() && state.get<1>()) {
-        state = __state.load(asio::memory_order_strict);
-      }
-      /*
-       * we assume that event loop must have been created after start.
-       */
-      auto loop = event_loop::get_event_loop();
-      while (state.get<1>() && loop) {
-        loop.value()->run_one();
-        state = __state.load(asio::memory_order_strict);
-      }
-    }
-
     void __finalise_state() {
       __state.store({true, true}, asio::memory_order_strict);
     }
 
   public:
     pool_worker(std::shared_ptr<event_loop> loop) :
-      __state{false, true}, __t{&pool_worker::__work, this} {
+      __state{false, true}, __t{pool_worker::thread_work, std::reference_wrapper(__state)} {
       static_cast<void>(event_loop::register_event_loop(loop, __t.get_id()));
     }
 
@@ -71,8 +51,29 @@ namespace jowi::asio {
         __t.join();
       }
     }
+
+    static void thread_work(std::atomic<bit_tuple<bool, bool>> &s) {
+      state_type state = s.load(asio::memory_order_strict);
+      /*
+       * This protects against two cases:
+       * - thread has been signaled to start
+       * - thread signaled to stop directly.
+       */
+      while (!state.get<0>() && state.get<1>()) {
+        state = s.load(asio::memory_order_strict);
+      }
+      /*
+       * we assume that event loop must have been created after start.
+       */
+      auto loop = event_loop::require_event_loop();
+      while (state.get<1>()) {
+        loop->run_one();
+        state = s.load(asio::memory_order_strict);
+      }
+    }
   };
-  struct pool_executor {
+
+  export struct pool_executor {
   private:
     std::vector<std::unique_ptr<pool_worker>> __workers;
 
@@ -96,4 +97,20 @@ namespace jowi::asio {
       }
     }
   };
+
+  /*
+   * Execution
+   */
+  export template <class... tasks> auto gather_expected(tasks... ts) {
+    auto l = event_loop::get_event_loop()
+               .or_else([]() {
+                 auto l = std::make_shared<event_loop>();
+                 static_cast<void>(event_loop::register_event_loop(l));
+                 return std::optional{l};
+               })
+               .value();
+    (l->push(ts.raw_coro(), false), ...);
+    l->run_forever();
+    return std::tuple{ts.expected_value()...};
+  }
 }

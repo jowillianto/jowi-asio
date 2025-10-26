@@ -27,18 +27,45 @@ namespace jowi::asio {
 
     static std::unordered_map<thread_id, std::shared_ptr<event_loop>> __local_loop;
 
+    struct async_push {
+    private:
+      std::reference_wrapper<event_loop> __l;
+      std::optional<std::unique_ptr<void, coro_state_deleter>> __ptr;
+
+    public:
+      async_push(event_loop &l, std::unique_ptr<void, coro_state_deleter> ptr) :
+        __l{l}, __ptr{std::move(ptr)} {}
+
+      static constexpr bool is_defer_awaitable = true;
+      bool await_ready() {
+        __ptr = __l.get().__q.try_push(std::move(__ptr).value());
+        return !__ptr.has_value();
+      }
+
+      /*
+       * blocking push.
+       */
+      std::coroutine_handle<void> await_suspend(std::coroutine_handle<void> h) {
+        __l.get().__q.push(std::move(__ptr).value());
+        return h;
+      }
+
+      void await_resume() {}
+    };
+
   public:
     event_loop(uint32_t loop_capacity = 4096) : __q{loop_capacity} {}
 
-    void push(task auto t) {
-      std::coroutine_handle<void> coro = t.raw_coro();
-      __q.push(std::unique_ptr<void, coro_state_deleter>{coro.address(), coro_state_deleter{true}});
-    }
-    void push(task auto &t) {  
-      std::coroutine_handle<void> coro = t.raw_coro();
+    void push(std::coroutine_handle<void> h, bool is_owning = true) {
       __q.push(
-        std::unique_ptr<void, coro_state_deleter>{coro.address(), coro_state_deleter{false}}
+        std::unique_ptr<void, coro_state_deleter>{h.address(), coro_state_deleter{is_owning}}
       );
+    }
+
+    async_push apush(std::coroutine_handle<void> h, bool is_owning = true) {
+      return async_push{
+        *this, std::unique_ptr<void, coro_state_deleter>{h.address(), coro_state_deleter{is_owning}}
+      };
     }
 
     void run_until_complete(task auto t) {
@@ -64,7 +91,8 @@ namespace jowi::asio {
       if (!state) {
         return false;
       }
-      std::coroutine_handle<void>::from_address(state->get()).resume();
+      auto coro = std::coroutine_handle<void>::from_address(state->get());
+      coro.resume();
       return true;
     }
 
@@ -101,6 +129,11 @@ namespace jowi::asio {
         return std::nullopt;
       }
       return it->second;
+    }
+    static std::shared_ptr<event_loop> require_event_loop(
+      thread_id id = std::this_thread::get_id()
+    ) {
+      return get_event_loop(id).value();
     }
   };
 

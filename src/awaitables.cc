@@ -24,7 +24,7 @@ namespace jowi::asio {
     static constexpr auto is_defer_awaitable = true;
     sleep_awaitable(std::chrono::steady_clock::time_point tp) noexcept : __end{std::move(tp)} {}
     bool await_ready() const noexcept {
-      return __end <= std::chrono::steady_clock::now();
+      return std::chrono::steady_clock::now() >= __end;
     }
     auto await_suspend(std::coroutine_handle<void> h) const noexcept {
       std::this_thread::sleep_until(__end);
