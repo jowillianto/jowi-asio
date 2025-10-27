@@ -97,8 +97,7 @@ namespace jowi::asio {
       if (!state) {
         return false;
       }
-      auto coro = std::coroutine_handle<void>::from_address(state->get());
-      coro.resume();
+      std::coroutine_handle<void>::from_address(state->get()).resume();
       return true;
     }
 

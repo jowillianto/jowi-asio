@@ -83,7 +83,7 @@ namespace jowi::asio {
       if (is_complete(std::memory_order_acquire)) {
         h.resume();
       } else {
-        co_await loop->aloop_sleep(start_time);
+        loop->loop_sleep(start_time);
         loop->push(__schedule(loop, h).release(), true);
       }
       co_return;
@@ -121,13 +121,7 @@ namespace jowi::asio {
     }
 
     auto await_suspend(std::coroutine_handle<void> h) {
-      // resume();
-      // return h;
       std::shared_ptr<event_loop> loop = event_loop::require_event_loop();
-      // loop->push(__schedule(loop));
-      // loop->push(__schedule(loop, h).release(), true);
-      // // loop->push(h, false);
-      // return raw_coro();
       loop->push(raw_coro(), false);
       while (!is_complete(std::memory_order_acquire) && loop->run_one()) {
       }
@@ -206,11 +200,9 @@ namespace jowi::asio {
     awaitable __a;
 
     unique_task<void> __rec_wait(std::shared_ptr<event_loop> loop, std::coroutine_handle<void> h) {
-      auto start_time = std::chrono::steady_clock::now();
       if (await_ready()) {
         h.resume();
       } else {
-        co_await loop->aloop_sleep(start_time);
         loop->push(__rec_wait(loop, h).release(), true);
       }
       co_return;
