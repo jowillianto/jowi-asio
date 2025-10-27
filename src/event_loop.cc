@@ -1,4 +1,5 @@
 module;
+#include <chrono>
 #include <coroutine>
 #include <memory>
 #include <optional>
@@ -7,6 +8,7 @@ module;
 export module jowi.asio:event_loop;
 import jowi.asio.lockfree;
 import :awaitable;
+import :awaitables;
 import :task;
 
 namespace jowi::asio {
@@ -24,6 +26,7 @@ namespace jowi::asio {
   struct event_loop {
   private:
     ringbuf_queue<void, coro_state_deleter> __q;
+    std::chrono::nanoseconds __time_slice;
 
     static std::unordered_map<thread_id, std::shared_ptr<event_loop>> __local_loop;
 
@@ -54,7 +57,10 @@ namespace jowi::asio {
     };
 
   public:
-    event_loop(uint32_t loop_capacity = 4096) : __q{loop_capacity} {}
+    event_loop(
+      uint32_t loop_capacity = 4096,
+      std::chrono::nanoseconds loop_time_slice = std::chrono::nanoseconds{100}
+    ) : __q{loop_capacity}, __time_slice{loop_time_slice} {}
 
     void push(std::coroutine_handle<void> h, bool is_owning = true) {
       __q.push(
@@ -94,6 +100,20 @@ namespace jowi::asio {
       auto coro = std::coroutine_handle<void>::from_address(state->get());
       coro.resume();
       return true;
+    }
+
+    /*
+     * sleep for time slice period of time
+     */
+    void loop_sleep(
+      std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now()
+    ) const noexcept {
+      std::this_thread::sleep_until(start_time + __time_slice);
+    }
+    sleep_awaitable aloop_sleep(
+      std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now()
+    ) const noexcept {
+      return sleep_until(start_time + __time_slice);
     }
 
     /*

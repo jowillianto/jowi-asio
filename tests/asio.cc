@@ -32,7 +32,7 @@ std::pair<std::invoke_result_t<F, Args...>, std::chrono::steady_clock::duration>
 
 JOWI_ADD_TEST(test_async_sleep) {
   auto beg = std::chrono::steady_clock::now();
-  auto res = asio::gather_expected(random_sleep(100), random_sleep(100));
+  auto res = asio::parallel_expected(random_sleep(100), random_sleep(100));
   auto end = std::chrono::steady_clock::now();
   test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<0>(res))), 0ULL);
   test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<1>(res))), 0ULL);
@@ -50,7 +50,7 @@ JOWI_ADD_TEST(test_async_task_await) {
     co_return co_await random_sleep(delay);
   };
   auto beg = std::chrono::steady_clock::now();
-  auto res = asio::gather_expected(nested_f(100), random_sleep(100));
+  auto res = asio::parallel_expected(nested_f(100), random_sleep(100));
   auto end = std::chrono::steady_clock::now();
   test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<0>(res))), 0ULL);
   test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<1>(res))), 0ULL);
@@ -75,7 +75,7 @@ JOWI_ADD_TEST(test_await_waiting_task) {
     co_return 0ULL;
   };
 
-  auto res = asio::gather_expected(task1(), task2());
+  auto res = asio::parallel_expected(task1(), task2());
   test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<0>(res))), 0ULL);
   test_lib::assert_equal(test_lib::assert_expected_value(std::move(std::get<1>(res))), 0ULL);
 }

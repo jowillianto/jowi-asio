@@ -1,10 +1,12 @@
 module;
 #include <atomic>
+#include <chrono>
 #include <coroutine>
 #include <exception>
 #include <expected>
 #include <memory>
 #include <optional>
+#include <thread>
 export module jowi.asio:unique_task;
 import :task;
 import :event_loop;
@@ -25,7 +27,11 @@ namespace jowi::asio {
         std::constructible_from<value_type, Args...>
       )
     void emplace(Args &&...args) {
-      __v.emplace(std::forward<Args>(args)...);
+      if constexpr (std::same_as<void, value_type>) {
+        __v.emplace(std::expected<void, task_error>{});
+      } else {
+        __v.emplace(value_type{std::forward<Args>(args)...});
+      }
       __complete.test_and_set(std::memory_order_release);
     }
 
@@ -73,9 +79,11 @@ namespace jowi::asio {
     }
 
     unique_task<void> __schedule(std::shared_ptr<event_loop> loop, std::coroutine_handle<void> h) {
+      auto start_time = std::chrono::steady_clock::now();
       if (is_complete(std::memory_order_acquire)) {
         h.resume();
       } else {
+        co_await loop->aloop_sleep(start_time);
         loop->push(__schedule(loop, h).release(), true);
       }
       co_return;
@@ -197,17 +205,19 @@ namespace jowi::asio {
   private:
     awaitable __a;
 
-    unique_task<void> __rec_wait(std::shared_ptr<event_loop> l, std::coroutine_handle<void> h) {
+    unique_task<void> __rec_wait(std::shared_ptr<event_loop> loop, std::coroutine_handle<void> h) {
+      auto start_time = std::chrono::steady_clock::now();
       if (await_ready()) {
         h.resume();
       } else {
-        l->push(__rec_wait(l, h).release(), true);
+        co_await loop->aloop_sleep(start_time);
+        loop->push(__rec_wait(loop, h).release(), true);
       }
       co_return;
     }
 
   public:
-    loop_awaitable(awaitable a) : __a{std::forward<awaitable>(__a)} {}
+    loop_awaitable(awaitable a) : __a{std::forward<awaitable>(a)} {}
 
     bool await_ready() {
       return __a.await_ready();

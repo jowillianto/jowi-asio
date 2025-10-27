@@ -44,6 +44,7 @@ namespace jowi::asio {
         d = state_type{e.get<0>(), true};
       }
     }
+
     ~pool_worker() {
       if (__t.joinable()) {
         // this ensure that the event loop for running will never be executed
@@ -96,12 +97,18 @@ namespace jowi::asio {
         worker->start();
       }
     }
+
+    ~pool_executor() {
+      for (auto &worker : __workers) {
+        worker->stop();
+      }
+    }
   };
 
   /*
    * Execution
    */
-  export template <class... tasks> auto gather_expected(tasks... ts) {
+  export template <class... tasks> auto parallel_expected(tasks... ts) {
     auto l = event_loop::get_event_loop()
                .or_else([]() {
                  auto l = std::make_shared<event_loop>();
@@ -112,5 +119,29 @@ namespace jowi::asio {
     (l->push(ts.raw_coro(), false), ...);
     l->run_forever();
     return std::tuple{ts.expected_value()...};
+  }
+
+  struct empty_result {
+    template <class task> static auto get_result(task &t) {
+      if constexpr (std::same_as<task_result_type<task>, void>) {
+        t.value();
+        return empty_result{};
+      } else {
+        return t.value();
+      }
+    }
+  };
+
+  export template <class... tasks> auto parallel(tasks... ts) {
+    auto l = event_loop::get_event_loop()
+               .or_else([]() {
+                 auto l = std::make_shared<event_loop>();
+                 static_cast<void>(event_loop::register_event_loop(l));
+                 return std::optional{l};
+               })
+               .value();
+    (l->push(ts.raw_coro(), false), ...);
+    l->run_forever();
+    return std::tuple{empty_result::get_result(ts)...};
   }
 }
