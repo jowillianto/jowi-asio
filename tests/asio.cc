@@ -67,12 +67,12 @@ JOWI_ADD_TEST(test_await_waiting_task) {
   auto task1 = [&]() -> asio::unique_task<uint32_t> {
     co_await asio::sleep_for(std::chrono::milliseconds{100});
     s.release();
-    co_return 0ULL;
+    co_return 0U;
   };
   auto task2 = [&]() -> asio::unique_task<uint32_t> {
     co_await asio::asema_acquire{s};
     co_await asio::asema_acquire{s};
-    co_return 0ULL;
+    co_return 0U;
   };
 
   auto res = asio::parallel_expected(task1(), task2());
