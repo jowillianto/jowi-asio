@@ -109,7 +109,7 @@ namespace jowi::asio {
     ) const noexcept {
       std::this_thread::sleep_until(start_time + __time_slice);
     }
-    sleep_awaitable aloop_sleep(
+    infinite_awaiter<sleep_poller<std::chrono::steady_clock>> aloop_sleep(
       std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now()
     ) const noexcept {
       return sleep_until(start_time + __time_slice);

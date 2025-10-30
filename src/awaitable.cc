@@ -1,5 +1,9 @@
 module;
+#include <chrono>
+#include <concepts>
 #include <coroutine>
+#include <optional>
+#include <thread>
 export module jowi.asio:awaitable;
 
 namespace jowi::asio {
@@ -45,9 +49,98 @@ namespace jowi::asio {
     }
   }
 
-  /*
-    gets the awaitable result.
-  */
+  template <class poll_type>
+  concept repeat_poller = requires(poll_type p) {
+    { std::declval<typename poll_type::value_type>() };
+    {
+      p.poll()
+    } -> std::same_as<std::conditional_t<
+      std::same_as<typename poll_type::value_type, void>,
+      bool,
+      std::optional<typename poll_type::value_type>>>;
+  };
+
   export template <awaitable awaitable_type>
   using await_result_type = decltype(std::declval<awaitable_type>().await_resume());
+
+  template <class poll_type>
+  concept block_poller = repeat_poller<poll_type> && requires(poll_type p) {
+    { p.poll_block() } -> std::same_as<typename poll_type::value_type>;
+  };
+
+  export template <repeat_poller poll_type> struct infinite_awaiter {
+  private:
+    using result_type = std::conditional_t<
+      std::same_as<typename poll_type::value_type, void>,
+      bool,
+      std::optional<typename poll_type::value_type>>;
+    poll_type __p;
+    result_type __res;
+
+  public:
+    static constexpr bool is_defer_awaitable = true;
+    template <class... Args>
+      requires(std::constructible_from<poll_type, Args...>)
+    infinite_awaiter(Args &&...args) : __p{std::forward<Args>(args)...} {}
+
+    bool await_ready() {
+      __res = __p.poll();
+      return __res;
+    }
+
+    std::coroutine_handle<void> await_suspend(std::coroutine_handle<void> h) {
+      if constexpr (block_poller<poll_type>) {
+        if constexpr (!std::same_as<result_type, bool>) {
+          __res.emplace(__p.poll_block());
+        }
+      } else {
+        while (!await_ready()) {
+          std::this_thread::yield();
+        }
+      }
+      return h;
+    }
+
+    typename poll_type::value_type await_resume() {
+      if constexpr (!std::same_as<result_type, bool>) {
+        return std::move(__res).value();
+      }
+    }
+  };
+
+  export template <repeat_poller poll_type, class clock_type = std::chrono::steady_clock>
+  struct timed_awaiter {
+  private:
+    poll_type __p;
+    clock_type::time_point __end_tp;
+    using result_type = std::conditional_t<
+      std::same_as<typename poll_type::value_type, void>,
+      bool,
+      std::optional<typename poll_type::value_type>>;
+    result_type __res;
+
+  public:
+    static constexpr bool is_defer_awaitable = true;
+    template <class... Args>
+      requires(std::constructible_from<poll_type, Args...>)
+    timed_awaiter(std::chrono::milliseconds duration, Args &&...args) :
+      __p{std::forward<Args>(args)...}, __end_tp{clock_type::now() + duration} {}
+
+    bool await_ready() {
+      __res = __p.poll();
+      bool is_overtime = clock_type::now() >= __end_tp;
+      return __res || is_overtime;
+    }
+
+    std::coroutine_handle<void> await_suspend(std::coroutine_handle<void> h) {
+      while (!await_ready()) {
+        std::this_thread::yield();
+      }
+      return h;
+    }
+
+    result_type await_resume() {
+      return std::move(__res);
+    }
+  };
 }
