@@ -1,12 +1,19 @@
 module;
+#include <atomic>
 #include <concepts>
 #include <coroutine>
 #include <exception>
 #include <expected>
+#include <optional>
 export module jowi.asio:task;
 import :awaitable;
 
 namespace jowi::asio {
+  /*
+   * task_error
+   * wraps an exception pointer such that it is rethrowable and follows the convention specified by
+   * the C++ standard library.
+   */
   export struct task_error : public std::exception {
   private:
     std::exception_ptr __e;
@@ -30,6 +37,60 @@ namespace jowi::asio {
       std::rethrow_exception(__e);
     }
   };
+
+  /*
+   * promise_state.
+   * A state machine that holds the current state of a promise.
+   */
+  template <class value_type> struct promise_state {
+  private:
+    std::atomic_flag __complete;
+    std::optional<std::expected<value_type, task_error>> __v;
+
+  public:
+    promise_state() : __complete{false}, __v{std::nullopt} {}
+
+    template <class... Args>
+      requires(
+        (std::same_as<value_type, void> && sizeof...(Args) == 0) ||
+        std::constructible_from<value_type, Args...>
+      )
+    void emplace(Args &&...args) {
+      if constexpr (std::same_as<void, value_type>) {
+        __v.emplace(std::expected<void, task_error>{});
+      } else {
+        __v.emplace(value_type{std::forward<Args>(args)...});
+      }
+      __complete.test_and_set(std::memory_order_release);
+    }
+
+    void capture_exception() {
+      __v.emplace(std::unexpected<task_error>{std::current_exception()});
+      __complete.test_and_set(std::memory_order_release);
+    }
+
+    bool is_complete(std::memory_order m = std::memory_order_relaxed) const noexcept {
+      return __complete.test(m);
+    }
+
+    std::expected<value_type, task_error> expected_value() {
+      return std::move(__v).value();
+    }
+
+    value_type value() {
+      if (__v->has_value()) {
+        if constexpr (!std::same_as<value_type, void>) {
+          return std::move(__v)->value();
+        } else {
+          __v.reset();
+          return;
+        }
+      }
+      __v->error().rethrow();
+      throw;
+    }
+  };
+
   /*
     probably useless definition
   */
@@ -64,6 +125,7 @@ namespace jowi::asio {
     {
       task_type::from_promise(std::declval<typename task_type::promise_type &>())
     } -> std::same_as<task_type>;
+    { task_type::from_address(std::declval<void *>()) } -> std::same_as<task_type>;
   };
 
   export template <task task_type>

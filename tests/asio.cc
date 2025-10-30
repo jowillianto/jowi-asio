@@ -13,7 +13,7 @@ JOWI_SETUP(argc, argv) {
   test_lib::get_test_context().set_time_unit(test_lib::test_time_unit::MILLI_SECONDS);
 }
 
-asio::unique_task<uint64_t> random_sleep(uint32_t delay) {
+asio::basic_task<uint64_t> random_sleep(uint32_t delay) {
   co_await asio::sleep_for(delay / 2);
   co_await asio::sleep_for(delay / 2);
   co_return 0ULL;
@@ -46,8 +46,8 @@ JOWI_ADD_TEST(test_async_sleep) {
 
 JOWI_ADD_TEST(test_async_task_await) {
   /* Nested Random Sleep. This should run in parallel with random_sleep */
-  auto nested_f = [](uint32_t delay) -> asio::unique_task<uint64_t> {
-    co_return co_await random_sleep(delay);
+  auto nested_f = [](uint32_t delay) -> asio::basic_task<uint64_t> {
+    co_return co_await random_sleep(delay).as_awaitable();
   };
   auto beg = std::chrono::steady_clock::now();
   auto res = asio::parallel_expected(nested_f(100), random_sleep(100));
@@ -64,12 +64,12 @@ JOWI_ADD_TEST(test_async_task_await) {
 
 JOWI_ADD_TEST(test_await_waiting_task) {
   std::binary_semaphore s{1};
-  auto task1 = [&]() -> asio::unique_task<uint32_t> {
+  auto task1 = [&]() -> asio::basic_task<uint32_t> {
     co_await asio::sleep_for(std::chrono::milliseconds{100});
     s.release();
     co_return 0U;
   };
-  auto task2 = [&]() -> asio::unique_task<uint32_t> {
+  auto task2 = [&]() -> asio::basic_task<uint32_t> {
     co_await asio::asema_acquire{s};
     co_await asio::asema_acquire{s};
     co_return 0U;

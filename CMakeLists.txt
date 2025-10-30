@@ -33,7 +33,7 @@ target_sources (${PROJECT_NAME}
       ${CMAKE_CURRENT_LIST_DIR}/src/awaitables.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/main.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/task.cc
-      ${CMAKE_CURRENT_LIST_DIR}/src/unique_task.cc
+      ${CMAKE_CURRENT_LIST_DIR}/src/basic_task.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/event_loop.cc
       ${CMAKE_CURRENT_LIST_DIR}/src/executor.cc
 )
