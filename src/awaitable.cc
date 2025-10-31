@@ -79,9 +79,11 @@ namespace jowi::asio {
 
   public:
     static constexpr bool is_defer_awaitable = true;
+
+    infinite_awaiter(poll_type p) : __p(std::forward<poll_type>(p)) {}
     template <class... Args>
       requires(std::constructible_from<poll_type, Args...>)
-    infinite_awaiter(Args &&...args) : __p{std::forward<Args>(args)...} {}
+    infinite_awaiter(Args &&...args) : infinite_awaiter(poll_type{std::forward<Args>(args)...}) {}
 
     bool await_ready() {
       __res = __p.poll();
@@ -121,10 +123,13 @@ namespace jowi::asio {
 
   public:
     static constexpr bool is_defer_awaitable = true;
+
+    timed_awaiter(std::chrono::milliseconds dur, poll_type p) :
+      __p{std::forward<poll_type>(p)}, __end_tp{clock_type::now() + dur} {}
     template <class... Args>
       requires(std::constructible_from<poll_type, Args...>)
-    timed_awaiter(std::chrono::milliseconds duration, Args &&...args) :
-      __p{std::forward<Args>(args)...}, __end_tp{clock_type::now() + duration} {}
+    timed_awaiter(std::chrono::milliseconds dur, Args &&...args) :
+      timed_awaiter(dur, poll_type{std::forward<Args>(args)...}) {}
 
     bool await_ready() {
       __res = __p.poll();

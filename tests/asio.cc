@@ -70,8 +70,8 @@ JOWI_ADD_TEST(test_await_waiting_task) {
     co_return 0U;
   };
   auto task2 = [&]() -> asio::basic_task<uint32_t> {
-    co_await asio::infinite_awaiter<asio::sema_acquire_poller<std::binary_semaphore>>{s};
-    co_await asio::infinite_awaiter<asio::sema_acquire_poller<std::binary_semaphore>>{s};
+    co_await asio::infinite_awaiter{asio::sema_acquire_poller{s}};
+    co_await asio::infinite_awaiter{asio::sema_acquire_poller{s}};
     co_return 0U;
   };
 
