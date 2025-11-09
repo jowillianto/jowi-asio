@@ -13,7 +13,7 @@ namespace test_lib = jowi::test_lib;
 namespace asio = jowi::asio;
 
 JOWI_SETUP(argc, argv) {
-  test_lib::get_test_context().set_time_unit(test_lib::test_time_unit::MILLI_SECONDS);
+  test_lib::get_test_context().set_time_unit(test_lib::TestTimeUnit::MILLI_SECONDS);
 }
 
 void increment_uint(uint32_t *d) {
@@ -22,29 +22,29 @@ void increment_uint(uint32_t *d) {
 
 JOWI_ADD_TEST(test_shared_ptr_drop) {
   uint32_t drop_count = 0;
-  auto ptr = asio::shared_ptr<uint32_t>{&drop_count, increment_uint};
+  auto ptr = asio::SharedPtr<uint32_t>{&drop_count, increment_uint};
   ptr.reset();
   test_lib::assert_equal(drop_count, 1);
 }
 
 JOWI_ADD_TEST(test_shared_ptr_boolean) {
-  auto ptr = asio::shared_ptr<uint32_t>{nullptr};
+  auto ptr = asio::SharedPtr<uint32_t>{nullptr};
   test_lib::assert_false(ptr);
   uint32_t drop_count = 0;
-  ptr = asio::shared_ptr<uint32_t>{&drop_count, increment_uint};
+  ptr = asio::SharedPtr<uint32_t>{&drop_count, increment_uint};
   test_lib::assert_true(ptr);
 }
 
 JOWI_ADD_TEST(test_shared_ptr_move) {
   uint32_t drop_count = 0;
-  auto ptr = asio::shared_ptr<uint32_t>{&drop_count, increment_uint};
+  auto ptr = asio::SharedPtr<uint32_t>{&drop_count, increment_uint};
   auto ptr2 = std::move(ptr);
   test_lib::assert_false(ptr);
 }
 
 JOWI_ADD_TEST(test_shared_ptr_living_copy_no_drop) {
   uint32_t drop_count = 0;
-  auto ptr = asio::shared_ptr<uint32_t>{&drop_count, increment_uint};
+  auto ptr = asio::SharedPtr<uint32_t>{&drop_count, increment_uint};
   auto ptr2 = ptr;
   ptr.reset();
   test_lib::assert_equal(drop_count, 0);
@@ -52,7 +52,7 @@ JOWI_ADD_TEST(test_shared_ptr_living_copy_no_drop) {
 
 JOWI_ADD_TEST(test_shared_ptr_thread_drop) {
   uint32_t drop_count = 0;
-  auto ptr = asio::shared_ptr<uint32_t>{&drop_count, increment_uint};
+  auto ptr = asio::SharedPtr<uint32_t>{&drop_count, increment_uint};
   auto fut = std::async(std::launch::deferred, [](decltype(ptr) ptr) { ptr.reset(); }, ptr);
   ptr.reset();
   fut.get();
@@ -61,7 +61,7 @@ JOWI_ADD_TEST(test_shared_ptr_thread_drop) {
 
 JOWI_ADD_TEST(test_shared_ptr_drop_fuzz) {
   uint32_t drop_count = 0;
-  auto ptr = asio::shared_ptr<uint32_t>{&drop_count, increment_uint};
+  auto ptr = asio::SharedPtr<uint32_t>{&drop_count, increment_uint};
   auto start = std::chrono::steady_clock::now();
   auto run_after_delay = [](decltype(start) s, decltype(ptr) ptr) {
     std::this_thread::sleep_until(s + std::chrono::milliseconds{test_lib::random_integer(0, 250)});
@@ -82,9 +82,9 @@ JOWI_ADD_TEST(test_shared_ptr_drop_fuzz) {
 
 JOWI_ADD_TEST(test_atomic_shared_ptr_unithread) {
   uint32_t drop_count[2] = {0, 0};
-  auto ptr = asio::shared_ptr<uint32_t>{&drop_count[0], increment_uint};
+  auto ptr = asio::SharedPtr<uint32_t>{&drop_count[0], increment_uint};
   std::atomic a_ptr{ptr};
-  auto ptr2 = asio::shared_ptr<uint32_t>{&drop_count[1], increment_uint};
+  auto ptr2 = asio::SharedPtr<uint32_t>{&drop_count[1], increment_uint};
   std::atomic a_ptr2{ptr2};
   // store 2 -> 1. We will now drop one fully.
   a_ptr.store(ptr2);
@@ -101,7 +101,7 @@ JOWI_ADD_TEST(test_atomic_shared_ptr_unithread) {
 
 JOWI_ADD_TEST(test_atomic_shared_ptr_hold_copy) {
   uint32_t drop_count = 0;
-  auto ptr = asio::shared_ptr<uint32_t>{&drop_count, increment_uint};
+  auto ptr = asio::SharedPtr<uint32_t>{&drop_count, increment_uint};
   std::atomic a_ptr{ptr};
   ptr.reset();
   test_lib::assert_equal(drop_count, 0);
@@ -112,7 +112,7 @@ JOWI_ADD_TEST(test_atomic_shared_ptr_hold_copy) {
 
 JOWI_ADD_TEST(test_shared_ptr_atomic_load_keep_ref) {
   uint32_t drop_count = 0;
-  std::atomic<asio::shared_ptr<uint32_t>> ptr{&drop_count, increment_uint};
+  std::atomic<asio::SharedPtr<uint32_t>> ptr{&drop_count, increment_uint};
   auto v = ptr.load();
   test_lib::assert_equal(v.ref_count(), 2);
   v.reset();
@@ -121,7 +121,7 @@ JOWI_ADD_TEST(test_shared_ptr_atomic_load_keep_ref) {
 
 JOWI_ADD_TEST(test_shared_ptr_atomic_flush_ref) {
   uint32_t drop_count = 0;
-  std::atomic<asio::shared_ptr<uint32_t>> ptr{&drop_count, increment_uint};
+  std::atomic<asio::SharedPtr<uint32_t>> ptr{&drop_count, increment_uint};
   auto v1 = ptr.load(); // defer 1
   auto v2 = ptr.load(); // defer 2
   auto v3 = ptr.exchange(nullptr); // flush.
@@ -132,14 +132,14 @@ JOWI_ADD_TEST(test_shared_ptr_atomic_flush_ref) {
 JOWI_ADD_TEST(test_shared_ptr_compare_exchange) {
   auto drop_count = std::pair{0u, 0u};
   auto ptr = std::pair{
-    asio::shared_ptr{&drop_count.first, increment_uint},
-    asio::shared_ptr{&drop_count.second, increment_uint}
+    asio::SharedPtr{&drop_count.first, increment_uint},
+    asio::SharedPtr{&drop_count.second, increment_uint}
   };
   std::pair<std::atomic<decltype(ptr.first)>, std::atomic<decltype(ptr.second)>> a_ptr{
     ptr.first, ptr.second
   };
 
-  asio::shared_ptr<uint32_t> dummy{nullptr};
+  asio::SharedPtr<uint32_t> dummy{nullptr};
   // dummy is null
   test_lib::assert_false(a_ptr.first.compare_exchange_weak(dummy, nullptr));
   // dummy contains ptr.first
@@ -153,7 +153,7 @@ JOWI_ADD_TEST(test_shared_ptr_compare_exchange) {
   // dummy contains ptr.second
   test_lib::assert_equal(dummy, ptr.second);
   // check that now second atomic pointer contains ptr.second.
-  test_lib::assert_equal(a_ptr.second.load(), asio::shared_ptr<uint32_t>{nullptr});
+  test_lib::assert_equal(a_ptr.second.load(), asio::SharedPtr<uint32_t>{nullptr});
   // we drop ptr.second and now drop_count.second should be one.
   ptr.second.reset();
   // oh damn dummy is ptr.2, how silly, let's reset it.
@@ -185,13 +185,13 @@ JOWI_ADD_TEST(test_shared_ptr_fuzz) {
   std::atomic_flag beg{false};
   std::vector<std::thread> ts;
   std::vector<uint32_t> is_dropped(v_count, 0u);
-  std::vector<std::unique_ptr<std::atomic<asio::shared_ptr<uint32_t>>>> aptr;
+  std::vector<std::unique_ptr<std::atomic<asio::SharedPtr<uint32_t>>>> aptr;
   aptr.reserve(v_count);
   ts.reserve(t_count);
   for (uint32_t i = 0; i != v_count; i += 1) {
     is_dropped.emplace_back(0u);
     aptr.emplace_back(
-      std::make_unique<std::atomic<asio::shared_ptr<uint32_t>>>(&is_dropped[i], increment_uint)
+      std::make_unique<std::atomic<asio::SharedPtr<uint32_t>>>(&is_dropped[i], increment_uint)
     );
   }
   auto loop = [&, l_count]() mutable {

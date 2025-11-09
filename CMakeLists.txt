@@ -41,31 +41,31 @@ target_link_libraries (jowi_asio PRIVATE jowi::asio_lockfree)
 target_compile_features (${PROJECT_NAME} PUBLIC cxx_std_23)
 
 if (JOWI_ASIO_BUILD_TESTS)
-  include(CTest)
-  if (NOT TARGET moderna::test_lib)
-    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/libs/test-lib)
-  endif()
-  jowi_add_test(test_jowi_asio_task
+    include(CTest)
+    if (NOT TARGET moderna::test_lib)
+        add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/libs/test-lib)
+    endif()
+    jowi_add_test(test_jowi_asio_task
     ${CMAKE_CURRENT_LIST_DIR}/tests/asio.cc
     LIBRARIES ${PROJECT_NAME}
     SANITIZERS all
   )
-  jowi_add_test(test_jowi_asio_tagged_ptr
+    jowi_add_test(test_jowi_asio_tagged_ptr
     ${CMAKE_CURRENT_LIST_DIR}/tests/tagged_ptr.cc
     LIBRARIES jowi::asio_lockfree
     SANITIZERS all
   )
-  jowi_add_test(test_jowi_asio_shared_ptr
+    jowi_add_test(test_jowi_asio_shared_ptr
     ${CMAKE_CURRENT_LIST_DIR}/tests/shared_ptr.cc
     LIBRARIES jowi::asio_lockfree
     SANITIZERS all
   )
-  jowi_add_test(test_jowi_asio_lockfree_queue
+    jowi_add_test(test_jowi_asio_lockfree_queue
       ${CMAKE_CURRENT_LIST_DIR}/tests/lockfree_queue.cc
       LIBRARIES jowi::asio_lockfree
       SANITIZERS all
   )
-  jowi_add_test(test_jowi_asio_ringbuf_queue
+    jowi_add_test(test_jowi_asio_ringbuf_queue
       ${CMAKE_CURRENT_LIST_DIR}/tests/ringbuf_queue.cc
       LIBRARIES jowi::asio_lockfree
       SANITIZERS all
@@ -81,19 +81,18 @@ if (JOWI_ASIO_BUILD_BENCHMARKS)
             jowi::asio_lockfree
             jowi::cli
             jowi::crogger
-            jowi::cli_ui
             jowi::test_lib
     )
 endif()
 
 if (JOWI_INSTALL)
-  include(GNUInstallDirs)
-  set (JOWI_COMPONENT_NAME "asio")
-  set_property (
+    include(GNUInstallDirs)
+    set (JOWI_COMPONENT_NAME "asio")
+    set_property (
     TARGET ${PROJECT_NAME}
     PROPERTY EXPORT_NAME ${JOWI_COMPONENT_NAME}
   )
-  install (
+    install (
     TARGETS ${PROJECT_NAME}
     EXPORT jowi
     FILE_SET
@@ -103,13 +102,13 @@ if (JOWI_INSTALL)
       COMPONENT ${JOWI_COMPONENT_NAME}
       DESTINATION "${CMAKE_INSTALL_PREFIX}/cxx_modules/jowi/${JOWI_COMPONENT_NAME}"
   )
-  if (PROJECT_IS_TOP_LEVEL)
-    install (
+    if (PROJECT_IS_TOP_LEVEL)
+        install (
       EXPORT jowi
       DESTINATION "${CMAKE_INSTALL_LIBDIR}/jowi"
       FILE jowi-config.cmake
       NAMESPACE jowi::
       CXX_MODULES_DIRECTORY cxx_modules/jowi
     )
-  endif()
+    endif()
 endif()

@@ -12,13 +12,14 @@ namespace jowi::asio {
   /*
     Sleeps the current thread for a certain time
   */
-  export template <class clock_type = std::chrono::steady_clock> struct sleep_poller {
+  export template <class clock_type = std::chrono::steady_clock> struct SleepPoller {
   private:
     clock_type::time_point __end_tp;
 
   public:
-    using value_type = void;
-    sleep_poller(clock_type::time_point tp) noexcept : __end_tp{std::move(tp)} {}
+    using ValueType = void;
+    using value_type = ValueType;
+    SleepPoller(clock_type::time_point tp) noexcept : __end_tp{std::move(tp)} {}
 
     bool poll() {
       return clock_type::now() >= __end_tp;
@@ -33,17 +34,17 @@ namespace jowi::asio {
     Factory Functions, this could look prettier.
   */
   export template <class clock_type = std::chrono::steady_clock>
-  infinite_awaiter<sleep_poller<clock_type>> sleep_until(
+  InfiniteAwaiter<SleepPoller<clock_type>> sleep_until(
     typename clock_type::time_point tp
   ) noexcept {
-    return infinite_awaiter<sleep_poller<clock_type>>{tp};
+    return InfiniteAwaiter<SleepPoller<clock_type>>{tp};
   }
   export template <class clock_type = std::chrono::steady_clock>
-  infinite_awaiter<sleep_poller<clock_type>> sleep_for(std::chrono::milliseconds dur) {
-    return sleep_poller{clock_type::now() + dur};
+  InfiniteAwaiter<SleepPoller<clock_type>> sleep_for(std::chrono::milliseconds dur) {
+    return SleepPoller{clock_type::now() + dur};
   }
   export template <class clock_type = std::chrono::steady_clock>
-  infinite_awaiter<sleep_poller<clock_type>> sleep_for(unsigned int dur) {
+  InfiniteAwaiter<SleepPoller<clock_type>> sleep_for(unsigned int dur) {
     return sleep_for(std::chrono::milliseconds{dur});
   }
 
@@ -70,13 +71,14 @@ namespace jowi::asio {
     { s.acquire() }; // blocking call
   };
 
-  export template <unique_lockable mutex_type> struct lock_poller {
+  export template <unique_lockable mutex_type> struct LockPoller {
   private:
     mutex_type &__m;
 
   public:
-    using value_type = std::unique_lock<mutex_type>;
-    lock_poller(mutex_type &m) noexcept : __m{m} {}
+    using ValueType = std::unique_lock<mutex_type>;
+    using value_type = ValueType;
+    LockPoller(mutex_type &m) noexcept : __m{m} {}
 
     std::optional<std::unique_lock<mutex_type>> poll() {
       bool is_locked = __m.try_lock();
@@ -91,13 +93,14 @@ namespace jowi::asio {
     }
   };
 
-  export template <shared_lockable mutex_type> struct shared_lock_poller {
+  export template <shared_lockable mutex_type> struct SharedLockPoller {
   private:
     mutex_type &__m;
 
   public:
-    using value_type = std::shared_lock<mutex_type>;
-    shared_lock_poller(mutex_type &m) noexcept : __m{m} {}
+    using ValueType = std::shared_lock<mutex_type>;
+    using value_type = ValueType;
+    SharedLockPoller(mutex_type &m) noexcept : __m{m} {}
 
     std::optional<std::shared_lock<mutex_type>> poll() {
       bool is_locked = __m.try_lock();
@@ -112,13 +115,14 @@ namespace jowi::asio {
     }
   };
 
-  export template <semaphore semaphore_type> struct sema_acquire_poller {
+  export template <semaphore semaphore_type> struct SemaAcquirePoller {
   private:
     semaphore_type &__m;
 
   public:
-    using value_type = void;
-    sema_acquire_poller(semaphore_type &m) noexcept : __m{m} {}
+    using ValueType = void;
+    using value_type = ValueType;
+    SemaAcquirePoller(semaphore_type &m) noexcept : __m{m} {}
 
     bool poll() {
       return __m.try_acquire();
@@ -129,17 +133,17 @@ namespace jowi::asio {
     }
   };
 
-  template struct sema_acquire_poller<std::binary_semaphore>;
-  template struct lock_poller<std::mutex>;
-  template struct lock_poller<std::shared_mutex>;
-  template struct shared_lock_poller<std::shared_mutex>;
-  template struct sleep_poller<std::chrono::steady_clock>;
+  template struct SemaAcquirePoller<std::binary_semaphore>;
+  template struct LockPoller<std::mutex>;
+  template struct LockPoller<std::shared_mutex>;
+  template struct SharedLockPoller<std::shared_mutex>;
+  template struct SleepPoller<std::chrono::steady_clock>;
 
-  template infinite_awaiter<sleep_poller<std::chrono::steady_clock>>
+  template InfiniteAwaiter<SleepPoller<std::chrono::steady_clock>>
   sleep_until<std::chrono::steady_clock>(std::chrono::steady_clock::time_point tp) noexcept;
-  template infinite_awaiter<sleep_poller<std::chrono::steady_clock>>
+  template InfiniteAwaiter<SleepPoller<std::chrono::steady_clock>>
   sleep_for<std::chrono::steady_clock>(std::chrono::milliseconds dur);
-  template infinite_awaiter<sleep_poller<std::chrono::steady_clock>>
+  template InfiniteAwaiter<SleepPoller<std::chrono::steady_clock>>
   sleep_for<std::chrono::steady_clock>(unsigned int dur);
 
 }

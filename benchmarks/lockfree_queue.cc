@@ -7,20 +7,18 @@
 #include <thread>
 #include <vector>
 import jowi.cli;
-import jowi.cli.ui;
 import jowi.crogger;
 import jowi.asio.lockfree;
 import jowi.test_lib;
 
 namespace cli = jowi::cli;
-namespace ui = jowi::cli::ui;
 namespace crogger = jowi::crogger;
 namespace asio = jowi::asio;
 namespace test_lib = jowi::test_lib;
 
 void configure_logger(bool verbose) {
   if (!verbose) {
-    crogger::root().set_filter(crogger::severity_filter{crogger::filter_op::gt, 10});
+    crogger::root().set_filter(crogger::SeverityFilter{crogger::FilterOp::gt, 10});
   }
 }
 
@@ -43,7 +41,7 @@ void run_lfq(uint32_t t_count, uint32_t n_op) {
   std::atomic<uint32_t> push_count{0};
   std::atomic<uint32_t> pop_count{0};
   std::atomic<uint32_t> op_count{n_op};
-  asio::lockfree_queue<uint32_t> lfq{};
+  asio::LockFreeQueue<uint32_t> lfq{};
   std::vector<std::thread> ts;
   ts.reserve(t_count);
   auto loop = [&]() mutable {
@@ -63,15 +61,15 @@ void run_lfq(uint32_t t_count, uint32_t n_op) {
     }
   };
 
-  crogger::debug(crogger::msg{"thread_setup_begin"});
+  crogger::debug(crogger::Msg{"thread_setup_begin"});
   auto start_time = std::chrono::steady_clock::now();
   for (uint32_t i = 0; i != t_count; i += 1) {
     ts.emplace_back(loop);
   }
   auto end_time = std::chrono::steady_clock::now();
-  crogger::debug(crogger::msg{"thread_setup_end"});
+  crogger::debug(crogger::Msg{"thread_setup_end"});
   crogger::info(
-    crogger::msg{
+    crogger::Msg{
       "thread_pool_setup: {:.3f}ms",
       static_cast<double>(
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
@@ -80,17 +78,17 @@ void run_lfq(uint32_t t_count, uint32_t n_op) {
     }
   );
 
-  crogger::debug(crogger::msg{"thread_run_begin"});
+  crogger::debug(crogger::Msg{"thread_run_begin"});
   start_time = std::chrono::steady_clock::now();
   beg.test_and_set(std::memory_order_release);
   for (uint32_t i = 0; i != t_count; i += 1) {
     ts[i].join();
   }
   end_time = std::chrono::steady_clock::now();
-  crogger::debug(crogger::msg{"thread_run_end"});
+  crogger::debug(crogger::Msg{"thread_run_end"});
 
   crogger::info(
-    crogger::msg{
+    crogger::Msg{
       "fuzz_time: {:.3f}ms",
       static_cast<double>(
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
@@ -98,8 +96,8 @@ void run_lfq(uint32_t t_count, uint32_t n_op) {
         1000.
     }
   );
-  crogger::info(crogger::msg{"push: {}", push_count.load(std::memory_order_acquire)});
-  crogger::info(crogger::msg{"pop: {}", pop_count.load(std::memory_order_acquire)});
+  crogger::info(crogger::Msg{"push: {}", push_count.load(std::memory_order_acquire)});
+  crogger::info(crogger::Msg{"pop: {}", pop_count.load(std::memory_order_acquire)});
 }
 
 void run_mq(uint32_t t_count, uint32_t n_op) {
@@ -131,15 +129,15 @@ void run_mq(uint32_t t_count, uint32_t n_op) {
     }
   };
 
-  crogger::debug(crogger::msg{"thread_setup_begin"});
+  crogger::debug(crogger::Msg{"thread_setup_begin"});
   auto start_time = std::chrono::steady_clock::now();
   for (uint32_t i = 0; i != t_count; i += 1) {
     ts.emplace_back(loop);
   }
   auto end_time = std::chrono::steady_clock::now();
-  crogger::debug(crogger::msg{"thread_setup_end"});
+  crogger::debug(crogger::Msg{"thread_setup_end"});
   crogger::info(
-    crogger::msg{
+    crogger::Msg{
       "thread_pool_setup: {:.3f}ms",
       static_cast<double>(
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
@@ -148,17 +146,17 @@ void run_mq(uint32_t t_count, uint32_t n_op) {
     }
   );
 
-  crogger::debug(crogger::msg{"thread_run_begin"});
+  crogger::debug(crogger::Msg{"thread_run_begin"});
   start_time = std::chrono::steady_clock::now();
   beg.test_and_set(std::memory_order_release);
   for (uint32_t i = 0; i != t_count; i += 1) {
     ts[i].join();
   }
   end_time = std::chrono::steady_clock::now();
-  crogger::debug(crogger::msg{"thread_run_end"});
+  crogger::debug(crogger::Msg{"thread_run_end"});
 
   crogger::info(
-    crogger::msg{
+    crogger::Msg{
       "fuzz_time: {:.3f}ms",
       static_cast<double>(
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
@@ -166,8 +164,8 @@ void run_mq(uint32_t t_count, uint32_t n_op) {
         1000.
     }
   );
-  crogger::info(crogger::msg{"push: {}", push_count.load(std::memory_order_acquire)});
-  crogger::info(crogger::msg{"pop: {}", pop_count.load(std::memory_order_acquire)});
+  crogger::info(crogger::Msg{"push: {}", push_count.load(std::memory_order_acquire)});
+  crogger::info(crogger::Msg{"pop: {}", pop_count.load(std::memory_order_acquire)});
 }
 
 void run_rbf(uint32_t t_count, uint32_t n_op, uint32_t buf_size) {
@@ -175,7 +173,7 @@ void run_rbf(uint32_t t_count, uint32_t n_op, uint32_t buf_size) {
   std::atomic<uint32_t> push_count{0};
   std::atomic<uint32_t> pop_count{0};
   std::atomic<uint32_t> op_count{n_op};
-  asio::ringbuf_queue<uint32_t> lfq{buf_size};
+  asio::RingbufQueue<uint32_t> lfq{buf_size};
   std::vector<std::thread> ts;
   ts.reserve(t_count);
   auto loop = [&]() mutable {
@@ -195,15 +193,15 @@ void run_rbf(uint32_t t_count, uint32_t n_op, uint32_t buf_size) {
     }
   };
 
-  crogger::debug(crogger::msg{"thread_setup_begin"});
+  crogger::debug(crogger::Msg{"thread_setup_begin"});
   auto start_time = std::chrono::steady_clock::now();
   for (uint32_t i = 0; i != t_count; i += 1) {
     ts.emplace_back(loop);
   }
   auto end_time = std::chrono::steady_clock::now();
-  crogger::debug(crogger::msg{"thread_setup_end"});
+  crogger::debug(crogger::Msg{"thread_setup_end"});
   crogger::info(
-    crogger::msg{
+    crogger::Msg{
       "thread_pool_setup: {:.3f}ms",
       static_cast<double>(
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
@@ -212,17 +210,17 @@ void run_rbf(uint32_t t_count, uint32_t n_op, uint32_t buf_size) {
     }
   );
 
-  crogger::debug(crogger::msg{"thread_run_begin"});
+  crogger::debug(crogger::Msg{"thread_run_begin"});
   start_time = std::chrono::steady_clock::now();
   beg.test_and_set(std::memory_order_release);
   for (uint32_t i = 0; i != t_count; i += 1) {
     ts[i].join();
   }
   end_time = std::chrono::steady_clock::now();
-  crogger::debug(crogger::msg{"thread_run_end"});
+  crogger::debug(crogger::Msg{"thread_run_end"});
 
   crogger::info(
-    crogger::msg{
+    crogger::Msg{
       "fuzz_time: {:.3f}ms",
       static_cast<double>(
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
@@ -230,13 +228,13 @@ void run_rbf(uint32_t t_count, uint32_t n_op, uint32_t buf_size) {
         1000.
     }
   );
-  crogger::info(crogger::msg{"push: {}", push_count.load(std::memory_order_acquire)});
-  crogger::info(crogger::msg{"pop: {}", pop_count.load(std::memory_order_acquire)});
+  crogger::info(crogger::Msg{"push: {}", push_count.load(std::memory_order_acquire)});
+  crogger::info(crogger::Msg{"pop: {}", pop_count.load(std::memory_order_acquire)});
 }
 
 int main(int argc, const char **argv) {
-  auto app = cli::app{
-    cli::app_identity{
+  auto app = cli::App{
+    cli::AppIdentity{
       .name{"Lockfree Queue Benchmark"},
       .description{"A benchmark for the lockfree queue included in jowi::asio"},
       .author{"Jonathan Willianto"},
@@ -273,14 +271,14 @@ int main(int argc, const char **argv) {
   auto verbose = app.args().contains("--verbose");
   configure_logger(verbose);
 
-  crogger::info(crogger::msg{"thread_count: {}", t_count});
-  crogger::info(crogger::msg{"n_op: {}", n_op});
-  crogger::info(crogger::msg{"buf_size: {}", buf_size});
+  crogger::info(crogger::Msg{"thread_count: {}", t_count});
+  crogger::info(crogger::Msg{"n_op: {}", n_op});
+  crogger::info(crogger::Msg{"buf_size: {}", buf_size});
 
-  crogger::info(crogger::msg{"Ring Buffer Implementation: "});
+  crogger::info(crogger::Msg{"Ring Buffer Implementation: "});
   run_rbf(t_count, n_op, buf_size);
-  crogger::info(crogger::msg{"Lock Free Implementation: "});
+  crogger::info(crogger::Msg{"Lock Free Implementation: "});
   run_lfq(t_count, n_op);
-  crogger::info(crogger::msg{"Mutex Implementation: "});
+  crogger::info(crogger::Msg{"Mutex Implementation: "});
   run_mq(t_count, n_op);
 }

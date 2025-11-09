@@ -7,16 +7,16 @@ import :shared_ptr;
 import :tagged_ptr;
 
 namespace jowi::asio {
-  template <class T> struct lockfree_queue_node {
+  template <class T> struct LockFreeQueueNode {
   private:
-    using This = lockfree_queue_node;
+    using This = LockFreeQueueNode;
     std::optional<T> __value;
 
   public:
-    std::atomic<shared_ptr<This>> next;
+    std::atomic<SharedPtr<This>> next;
     template <class... Args>
       requires(std::constructible_from<std::optional<T>, Args...>)
-    lockfree_queue_node(Args &&...args) : __value{std::forward<Args>(args)...}, next{nullptr} {}
+    LockFreeQueueNode(Args &&...args) : __value{std::forward<Args>(args)...}, next{nullptr} {}
     T move_value() {
       return std::move(__value).value();
     }
@@ -25,24 +25,24 @@ namespace jowi::asio {
    * lockfree queue implementation based on the michael-scott queue with ref count memory
    * reclamation.
    */
-  export template <class T> struct lockfree_queue {
+  export template <class T> struct LockFreeQueue {
   private:
-    using node_type = lockfree_queue_node<T>;
-    node_type __head;
-    std::atomic<shared_ptr<node_type>> __tail;
+    using NodeType = LockFreeQueueNode<T>;
+    NodeType __head;
+    std::atomic<SharedPtr<NodeType>> __tail;
     std::atomic<uint64_t> __size;
 
-    std::optional<shared_ptr<node_type>> __pop() {
+    std::optional<SharedPtr<NodeType>> __pop() {
       /**
        * simply, we swap head_next with head_next_next through CAS and update __tail if it ever
        * catches up.
        */
-      shared_ptr<node_type> head_next = __head.next.load(memory_order_strict);
+      SharedPtr<NodeType> head_next = __head.next.load(memory_order_strict);
       if (!head_next) {
         reset_tail();
         return std::nullopt;
       }
-      shared_ptr<node_type> head_next_next = head_next->next.load(memory_order_strict);
+      SharedPtr<NodeType> head_next_next = head_next->next.load(memory_order_strict);
       while (!__head.next.compare_exchange_weak(head_next, head_next_next, memory_order_strict)) {
         if (!head_next) {
           reset_tail();
@@ -57,12 +57,12 @@ namespace jowi::asio {
     }
 
   public:
-    lockfree_queue() : __head{std::nullopt}, __tail{&__head, [](auto *) {}}, __size{0} {}
+    LockFreeQueue() : __head{std::nullopt}, __tail{&__head, [](auto *) {}}, __size{0} {}
 
     template <class... Args>
       requires(std::constructible_from<T, Args...>)
     void push(Args &&...args) {
-      auto new_node = asio::make_shared<node_type>(std::forward<Args>(args)...);
+      auto new_node = asio::make_shared<NodeType>(std::forward<Args>(args)...);
       /*
        * 1. Find the tail (i.e. node which next node is nullptr)
        * 2. CAS
@@ -70,8 +70,8 @@ namespace jowi::asio {
        *
        * NB: __tail is a cache.
        */
-      shared_ptr<node_type> tail = __tail.load(memory_order_strict);
-      shared_ptr<node_type> tail_next{nullptr};
+      SharedPtr<NodeType> tail = __tail.load(memory_order_strict);
+      SharedPtr<NodeType> tail_next{nullptr};
 
       // Find tail, i.e. we can only replace if tail_next is a nullptr.
       while (!(tail->next).compare_exchange_weak(tail_next, new_node, memory_order_strict)) {
@@ -87,7 +87,7 @@ namespace jowi::asio {
     }
 
     std::optional<T> pop() {
-      return __pop().transform(&node_type::move_value);
+      return __pop().transform(&NodeType::move_value);
     }
 
     void clear() {
@@ -101,7 +101,7 @@ namespace jowi::asio {
       return __size.load(m);
     }
 
-    ~lockfree_queue() {
+    ~LockFreeQueue() {
       clear();
     }
   };

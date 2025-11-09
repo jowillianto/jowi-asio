@@ -12,11 +12,11 @@ namespace test_lib = jowi::test_lib;
 namespace asio = jowi::asio;
 
 JOWI_SETUP(argc, argv) {
-  test_lib::get_test_context().set_time_unit(test_lib::test_time_unit::MILLI_SECONDS);
+  test_lib::get_test_context().set_time_unit(test_lib::TestTimeUnit::MILLI_SECONDS);
 }
 
 JOWI_ADD_TEST(test_single_thread_simple) {
-  asio::lockfree_queue<uint32_t> lfq{};
+  asio::LockFreeQueue<uint32_t> lfq{};
   uint32_t num = test_lib::random_integer(0u, UINT_MAX);
   lfq.push(num);
   test_lib::assert_equal(lfq.size(), 1);
@@ -25,7 +25,7 @@ JOWI_ADD_TEST(test_single_thread_simple) {
 
 JOWI_ADD_TEST(test_single_thread_fuzz) {
   std::queue<uint32_t> q{};
-  asio::lockfree_queue<uint32_t> lfq{};
+  asio::LockFreeQueue<uint32_t> lfq{};
   uint32_t l_count = test_lib::random_integer(10'000u, 99'000u);
   for (uint32_t i = 0; i != l_count; i += 1) {
     uint32_t num = test_lib::random_integer(0u, UINT_MAX);
@@ -44,7 +44,7 @@ JOWI_ADD_TEST(test_multithread_fuzz) {
   std::atomic_flag beg{false};
   std::atomic<uint32_t> push_count{0};
   std::atomic<uint32_t> pop_count{0};
-  asio::lockfree_queue<uint32_t> lfq{};
+  asio::LockFreeQueue<uint32_t> lfq{};
   std::vector<std::thread> ts;
   ts.reserve(t_count);
   auto loop = [&, l_count]() mutable {

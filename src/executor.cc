@@ -8,7 +8,7 @@ import jowi.asio.lockfree;
 import :event_loop;
 
 namespace jowi::asio {
-  export struct pool_worker {
+  export struct PoolWorker {
   private:
     std::thread __t;
     /*
@@ -16,36 +16,36 @@ namespace jowi::asio {
      * - if worker should start run (start sig)
      * - if worker should stop run (stop sig)
      */
-    using state_type = bit_tuple<bool, bool>;
-    std::atomic<state_type> __state;
+    using StateType = BitTuple<bool, bool>;
+    std::atomic<StateType> __state;
 
     void __finalise_state() {
       __state.store({true, true}, asio::memory_order_strict);
     }
 
   public:
-    pool_worker(std::shared_ptr<event_loop> loop) :
-      __state{false, true}, __t{pool_worker::thread_work, std::reference_wrapper(__state)} {
-      static_cast<void>(event_loop::register_event_loop(loop, __t.get_id()));
+    PoolWorker(std::shared_ptr<EventLoop> loop) :
+      __state{false, true}, __t{PoolWorker::thread_work, std::reference_wrapper(__state)} {
+      static_cast<void>(EventLoop::register_event_loop(loop, __t.get_id()));
     }
 
     void start() noexcept {
-      state_type e{false, false};
-      state_type d{true, false};
+      StateType e{false, false};
+      StateType d{true, false};
       while (__state.compare_exchange_weak(e, d, asio::memory_order_strict)) {
-        d = state_type{true, e.get<1>()};
+        d = StateType{true, e.get<1>()};
       }
     }
 
     void stop() noexcept {
-      state_type e{true, false};
-      state_type d{true, true};
+      StateType e{true, false};
+      StateType d{true, true};
       while (__state.compare_exchange_weak(e, d, asio::memory_order_strict)) {
-        d = state_type{e.get<0>(), true};
+        d = StateType{e.get<0>(), true};
       }
     }
 
-    ~pool_worker() {
+    ~PoolWorker() {
       if (__t.joinable()) {
         // this ensure that the event loop for running will never be executed
         __finalise_state();
@@ -53,8 +53,8 @@ namespace jowi::asio {
       }
     }
 
-    static void thread_work(std::atomic<bit_tuple<bool, bool>> &s) {
-      state_type state = s.load(asio::memory_order_strict);
+    static void thread_work(std::atomic<BitTuple<bool, bool>> &s) {
+      StateType state = s.load(asio::memory_order_strict);
       /*
        * This protects against two cases:
        * - thread has been signaled to start
@@ -66,7 +66,7 @@ namespace jowi::asio {
       /*
        * we assume that event loop must have been created after start.
        */
-      auto loop = event_loop::require_event_loop();
+      auto loop = EventLoop::require_event_loop();
       while (state.get<1>()) {
         loop->run_one();
         state = s.load(asio::memory_order_strict);
@@ -74,31 +74,31 @@ namespace jowi::asio {
     }
   };
 
-  export struct pool_executor {
+  export struct PoolExecutor {
   private:
-    std::vector<std::unique_ptr<pool_worker>> __workers;
+    std::vector<std::unique_ptr<PoolWorker>> __workers;
 
   public:
-    pool_executor(
+    PoolExecutor(
       uint64_t max_size,
       uint32_t loop_size = 4096,
-      std::optional<std::shared_ptr<event_loop>> opt_loop = std::nullopt
+      std::optional<std::shared_ptr<EventLoop>> opt_loop = std::nullopt
     ) {
       auto loop = opt_loop.or_else(
-                            []() { return event_loop::get_event_loop(); }
+                            []() { return EventLoop::get_event_loop(); }
       ).or_else([&]() {
-         return std::optional{std::make_shared<event_loop>(loop_size)};
+         return std::optional{std::make_shared<EventLoop>(loop_size)};
        }).value();
       __workers.reserve(max_size);
       for (uint64_t i = 0; i != max_size; i += 1) {
-        __workers.emplace_back(std::make_unique<pool_worker>(loop));
+        __workers.emplace_back(std::make_unique<PoolWorker>(loop));
       }
       for (auto &worker : __workers) {
         worker->start();
       }
     }
 
-    ~pool_executor() {
+    ~PoolExecutor() {
       for (auto &worker : __workers) {
         worker->stop();
       }
@@ -109,10 +109,10 @@ namespace jowi::asio {
    * Execution
    */
   export template <class... tasks> auto parallel_expected(tasks... ts) {
-    auto l = event_loop::get_event_loop()
+    auto l = EventLoop::get_event_loop()
                .or_else([]() {
-                 auto l = std::make_shared<event_loop>();
-                 static_cast<void>(event_loop::register_event_loop(l));
+                 auto l = std::make_shared<EventLoop>();
+                 static_cast<void>(EventLoop::register_event_loop(l));
                  return std::optional{l};
                })
                .value();
@@ -121,11 +121,11 @@ namespace jowi::asio {
     return std::tuple{ts.expected_value()...};
   }
 
-  struct empty_result {
+  struct EmptyResult {
     template <class task> static auto get_result(task &t) {
-      if constexpr (std::same_as<task_result_type<task>, void>) {
+      if constexpr (std::same_as<TaskResultType<task>, void>) {
         t.value();
-        return empty_result{};
+        return EmptyResult{};
       } else {
         return t.value();
       }
@@ -133,15 +133,15 @@ namespace jowi::asio {
   };
 
   export template <class... tasks> auto parallel(tasks... ts) {
-    auto l = event_loop::get_event_loop()
+    auto l = EventLoop::get_event_loop()
                .or_else([]() {
-                 auto l = std::make_shared<event_loop>();
-                 static_cast<void>(event_loop::register_event_loop(l));
+                 auto l = std::make_shared<EventLoop>();
+                 static_cast<void>(EventLoop::register_event_loop(l));
                  return std::optional{l};
                })
                .value();
     (l->push(ts.raw_coro(), false), ...);
     l->run_forever();
-    return std::tuple{empty_result::get_result(ts)...};
+    return std::tuple{EmptyResult::get_result(ts)...};
   }
 }

@@ -12,9 +12,9 @@ import :awaitables;
 import :task;
 
 namespace jowi::asio {
-  using thread_id = decltype(std::this_thread::get_id());
+  using ThreadId = decltype(std::this_thread::get_id());
 
-  struct coro_state_deleter {
+  struct CoroStateDeleter {
     bool is_owning;
 
     void operator()(void *state) {
@@ -23,20 +23,20 @@ namespace jowi::asio {
     }
   };
 
-  struct event_loop {
+  struct EventLoop {
   private:
-    ringbuf_queue<void, coro_state_deleter> __q;
+    RingbufQueue<void, CoroStateDeleter> __q;
     std::chrono::nanoseconds __time_slice;
 
-    static std::unordered_map<thread_id, std::shared_ptr<event_loop>> __local_loop;
+    static std::unordered_map<ThreadId, std::shared_ptr<EventLoop>> __local_loop;
 
-    struct async_push {
+    struct AsyncPush {
     private:
-      std::reference_wrapper<event_loop> __l;
-      std::optional<std::unique_ptr<void, coro_state_deleter>> __ptr;
+      std::reference_wrapper<EventLoop> __l;
+      std::optional<std::unique_ptr<void, CoroStateDeleter>> __ptr;
 
     public:
-      async_push(event_loop &l, std::unique_ptr<void, coro_state_deleter> ptr) :
+      AsyncPush(EventLoop &l, std::unique_ptr<void, CoroStateDeleter> ptr) :
         __l{l}, __ptr{std::move(ptr)} {}
 
       static constexpr bool is_defer_awaitable = true;
@@ -57,20 +57,20 @@ namespace jowi::asio {
     };
 
   public:
-    event_loop(
+    EventLoop(
       uint32_t loop_capacity = 4096,
       std::chrono::nanoseconds loop_time_slice = std::chrono::nanoseconds{100}
     ) : __q{loop_capacity}, __time_slice{loop_time_slice} {}
 
     void push(std::coroutine_handle<void> h, bool is_owning = true) {
       __q.push(
-        std::unique_ptr<void, coro_state_deleter>{h.address(), coro_state_deleter{is_owning}}
+        std::unique_ptr<void, CoroStateDeleter>{h.address(), CoroStateDeleter{is_owning}}
       );
     }
 
-    async_push apush(std::coroutine_handle<void> h, bool is_owning = true) {
-      return async_push{
-        *this, std::unique_ptr<void, coro_state_deleter>{h.address(), coro_state_deleter{is_owning}}
+    AsyncPush apush(std::coroutine_handle<void> h, bool is_owning = true) {
+      return AsyncPush{
+        *this, std::unique_ptr<void, CoroStateDeleter>{h.address(), CoroStateDeleter{is_owning}}
       };
     }
 
@@ -109,7 +109,7 @@ namespace jowi::asio {
     ) const noexcept {
       std::this_thread::sleep_until(start_time + __time_slice);
     }
-    infinite_awaiter<sleep_poller<std::chrono::steady_clock>> aloop_sleep(
+    InfiniteAwaiter<SleepPoller<std::chrono::steady_clock>> aloop_sleep(
       std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now()
     ) const noexcept {
       return sleep_until(start_time + __time_slice);
@@ -119,7 +119,7 @@ namespace jowi::asio {
      * Singleton Functions
      */
     [[nodiscard("register success status")]] static bool register_event_loop(
-      std::shared_ptr<event_loop> l, thread_id id = std::this_thread::get_id()
+      std::shared_ptr<EventLoop> l, ThreadId id = std::this_thread::get_id()
     ) {
       auto it = __local_loop.find(id);
       if (it == __local_loop.end()) {
@@ -130,7 +130,7 @@ namespace jowi::asio {
     }
 
     [[nodiscard("remove success status")]] static bool remove_event_loop(
-      thread_id id = std::this_thread::get_id()
+      ThreadId id = std::this_thread::get_id()
     ) {
       auto it = __local_loop.find(id);
       if (it == __local_loop.end()) {
@@ -140,8 +140,8 @@ namespace jowi::asio {
       return true;
     }
 
-    static std::optional<std::shared_ptr<event_loop>> get_event_loop(
-      thread_id id = std::this_thread::get_id()
+    static std::optional<std::shared_ptr<EventLoop>> get_event_loop(
+      ThreadId id = std::this_thread::get_id()
     ) {
       auto it = __local_loop.find(id);
       if (it == __local_loop.end()) {
@@ -149,12 +149,12 @@ namespace jowi::asio {
       }
       return it->second;
     }
-    static std::shared_ptr<event_loop> require_event_loop(
-      thread_id id = std::this_thread::get_id()
+    static std::shared_ptr<EventLoop> require_event_loop(
+      ThreadId id = std::this_thread::get_id()
     ) {
       return get_event_loop(id).value();
     }
   };
 
-  std::unordered_map<thread_id, std::shared_ptr<event_loop>> event_loop::__local_loop{};
+  std::unordered_map<ThreadId, std::shared_ptr<EventLoop>> EventLoop::__local_loop{};
 }

@@ -10,16 +10,16 @@ import :awaitable;
 
 namespace jowi::asio {
   /*
-   * task_error
+   * TaskError
    * wraps an exception pointer such that it is rethrowable and follows the convention specified by
    * the C++ standard library.
    */
-  export struct task_error : public std::exception {
+  export struct TaskError : public std::exception {
   private:
     std::exception_ptr __e;
 
   public:
-    task_error(std::exception_ptr e) : __e{std::move(e)} {}
+    TaskError(std::exception_ptr e) : __e{std::move(e)} {}
 
     const char *what() const noexcept {
       try {
@@ -39,16 +39,16 @@ namespace jowi::asio {
   };
 
   /*
-   * promise_state.
+   * PromiseState.
    * A state machine that holds the current state of a promise.
    */
-  template <class value_type> struct promise_state {
+  template <class value_type> struct PromiseState {
   private:
     std::atomic_flag __complete;
-    std::optional<std::expected<value_type, task_error>> __v;
+    std::optional<std::expected<value_type, TaskError>> __v;
 
   public:
-    promise_state() : __complete{false}, __v{std::nullopt} {}
+    PromiseState() : __complete{false}, __v{std::nullopt} {}
 
     template <class... Args>
       requires(
@@ -57,7 +57,7 @@ namespace jowi::asio {
       )
     void emplace(Args &&...args) {
       if constexpr (std::same_as<void, value_type>) {
-        __v.emplace(std::expected<void, task_error>{});
+        __v.emplace(std::expected<void, TaskError>{});
       } else {
         __v.emplace(value_type{std::forward<Args>(args)...});
       }
@@ -65,7 +65,7 @@ namespace jowi::asio {
     }
 
     void capture_exception() {
-      __v.emplace(std::unexpected<task_error>{std::current_exception()});
+      __v.emplace(std::unexpected<TaskError>{std::current_exception()});
       __complete.test_and_set(std::memory_order_release);
     }
 
@@ -73,7 +73,7 @@ namespace jowi::asio {
       return __complete.test(m);
     }
 
-    std::expected<value_type, task_error> expected_value() {
+    std::expected<value_type, TaskError> expected_value() {
       return std::move(__v).value();
     }
 
@@ -105,7 +105,7 @@ namespace jowi::asio {
     { p.value() } -> std::same_as<typename promise_type::value_type>;
     {
       p.expected_value()
-    } -> std::same_as<std::expected<typename promise_type::value_type, task_error>>;
+    } -> std::same_as<std::expected<typename promise_type::value_type, TaskError>>;
   };
 
   export template <class task_type, class promise_type>
@@ -121,7 +121,7 @@ namespace jowi::asio {
     { ct.raw_coro() } -> std::same_as<std::coroutine_handle<void>>;
     {
       t.expected_value()
-    } -> std::same_as<std::expected<typename task_type::promise_type::value_type, task_error>>;
+    } -> std::same_as<std::expected<typename task_type::promise_type::value_type, TaskError>>;
     {
       task_type::from_promise(std::declval<typename task_type::promise_type &>())
     } -> std::same_as<task_type>;
@@ -129,9 +129,9 @@ namespace jowi::asio {
   };
 
   export template <task task_type>
-  using task_result_type = std::invoke_result_t<decltype(&task_type::value), task_type *>;
+  using TaskResultType = std::invoke_result_t<decltype(&task_type::value), task_type *>;
 
   export template <task task_type>
-  using task_expected_type =
+  using TaskExpectedType =
     std::invoke_result_t<decltype(&task_type::expected_value), task_type *>;
 }

@@ -51,39 +51,39 @@ namespace jowi::asio {
 
   template <class poll_type>
   concept repeat_poller = requires(poll_type p) {
-    { std::declval<typename poll_type::value_type>() };
+    { std::declval<typename poll_type::ValueType>() };
     {
       p.poll()
     } -> std::same_as<std::conditional_t<
-      std::same_as<typename poll_type::value_type, void>,
+      std::same_as<typename poll_type::ValueType, void>,
       bool,
-      std::optional<typename poll_type::value_type>>>;
+      std::optional<typename poll_type::ValueType>>>;
   };
 
   export template <awaitable awaitable_type>
-  using await_result_type = decltype(std::declval<awaitable_type>().await_resume());
+  using AwaitResultType = decltype(std::declval<awaitable_type>().await_resume());
 
   template <class poll_type>
-  concept block_poller = repeat_poller<poll_type> && requires(poll_type p) {
-    { p.poll_block() } -> std::same_as<typename poll_type::value_type>;
+  concept bLockPoller = repeat_poller<poll_type> && requires(poll_type p) {
+    { p.poll_block() } -> std::same_as<typename poll_type::ValueType>;
   };
 
-  export template <repeat_poller poll_type> struct infinite_awaiter {
+  export template <repeat_poller poll_type> struct InfiniteAwaiter {
   private:
-    using result_type = std::conditional_t<
-      std::same_as<typename poll_type::value_type, void>,
+    using ResultType = std::conditional_t<
+      std::same_as<typename poll_type::ValueType, void>,
       bool,
-      std::optional<typename poll_type::value_type>>;
+      std::optional<typename poll_type::ValueType>>;
     poll_type __p;
-    result_type __res;
+    ResultType __res;
 
   public:
     static constexpr bool is_defer_awaitable = true;
 
-    infinite_awaiter(poll_type p) : __p(std::forward<poll_type>(p)) {}
+    InfiniteAwaiter(poll_type p) : __p(std::forward<poll_type>(p)) {}
     template <class... Args>
       requires(std::constructible_from<poll_type, Args...>)
-    infinite_awaiter(Args &&...args) : infinite_awaiter(poll_type{std::forward<Args>(args)...}) {}
+    InfiniteAwaiter(Args &&...args) : InfiniteAwaiter(poll_type{std::forward<Args>(args)...}) {}
 
     bool await_ready() {
       __res = __p.poll();
@@ -91,8 +91,8 @@ namespace jowi::asio {
     }
 
     std::coroutine_handle<void> await_suspend(std::coroutine_handle<void> h) {
-      if constexpr (block_poller<poll_type>) {
-        if constexpr (!std::same_as<result_type, bool>) {
+      if constexpr (bLockPoller<poll_type>) {
+        if constexpr (!std::same_as<ResultType, bool>) {
           __res.emplace(__p.poll_block());
         }
       } else {
@@ -103,33 +103,33 @@ namespace jowi::asio {
       return h;
     }
 
-    typename poll_type::value_type await_resume() {
-      if constexpr (!std::same_as<result_type, bool>) {
+    typename poll_type::ValueType await_resume() {
+      if constexpr (!std::same_as<ResultType, bool>) {
         return std::move(__res).value();
       }
     }
   };
 
   export template <repeat_poller poll_type, class clock_type = std::chrono::steady_clock>
-  struct timed_awaiter {
+  struct TimedAwaiter {
   private:
     poll_type __p;
-    clock_type::time_point __end_tp;
-    using result_type = std::conditional_t<
-      std::same_as<typename poll_type::value_type, void>,
+    typename clock_type::time_point __end_tp;
+    using ResultType = std::conditional_t<
+      std::same_as<typename poll_type::ValueType, void>,
       bool,
-      std::optional<typename poll_type::value_type>>;
-    result_type __res;
+      std::optional<typename poll_type::ValueType>>;
+    ResultType __res;
 
   public:
     static constexpr bool is_defer_awaitable = true;
 
-    timed_awaiter(std::chrono::milliseconds dur, poll_type p) :
+    TimedAwaiter(std::chrono::milliseconds dur, poll_type p) :
       __p{std::forward<poll_type>(p)}, __end_tp{clock_type::now() + dur} {}
     template <class... Args>
       requires(std::constructible_from<poll_type, Args...>)
-    timed_awaiter(std::chrono::milliseconds dur, Args &&...args) :
-      timed_awaiter(dur, poll_type{std::forward<Args>(args)...}) {}
+    TimedAwaiter(std::chrono::milliseconds dur, Args &&...args) :
+      TimedAwaiter(dur, poll_type{std::forward<Args>(args)...}) {}
 
     bool await_ready() {
       __res = __p.poll();
@@ -144,7 +144,7 @@ namespace jowi::asio {
       return h;
     }
 
-    result_type await_resume() {
+    ResultType await_resume() {
       return std::move(__res);
     }
   };
