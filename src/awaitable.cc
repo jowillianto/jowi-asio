@@ -87,7 +87,7 @@ namespace jowi::asio {
 
     bool await_ready() {
       __res = __p.poll();
-      return __res;
+      return static_cast<bool>(__res);
     }
 
     std::coroutine_handle<void> await_suspend(std::coroutine_handle<void> h) {
@@ -134,7 +134,7 @@ namespace jowi::asio {
     bool await_ready() {
       __res = __p.poll();
       bool is_overtime = clock_type::now() >= __end_tp;
-      return __res || is_overtime;
+      return static_cast<bool>(__res) || is_overtime;
     }
 
     std::coroutine_handle<void> await_suspend(std::coroutine_handle<void> h) {
@@ -145,7 +145,7 @@ namespace jowi::asio {
     }
 
     ResultType await_resume() {
-      return std::move(__res);
+      return static_cast<bool>(std::move(__res));
     }
   };
 }
