@@ -81,8 +81,7 @@ namespace jowi::asio {
     static constexpr bool is_defer_awaitable = true;
 
     InfiniteAwaiter(poll_type p) : __p(std::forward<poll_type>(p)) {}
-    template <class... Args>
-      requires(std::constructible_from<poll_type, Args...>)
+    template <class... Args> requires(std::constructible_from<poll_type, Args...>)
     InfiniteAwaiter(Args &&...args) : InfiniteAwaiter(poll_type{std::forward<Args>(args)...}) {}
 
     bool await_ready() {
@@ -126,10 +125,20 @@ namespace jowi::asio {
 
     TimedAwaiter(std::chrono::milliseconds dur, poll_type p) :
       __p{std::forward<poll_type>(p)}, __end_tp{clock_type::now() + dur} {}
-    template <class... Args>
-      requires(std::constructible_from<poll_type, Args...>)
+    template <class... Args> requires(std::constructible_from<poll_type, Args...>)
     TimedAwaiter(std::chrono::milliseconds dur, Args &&...args) :
       TimedAwaiter(dur, poll_type{std::forward<Args>(args)...}) {}
+
+    /*
+     * this allows timed_awaiter to have the same semantics as infinite awaiter
+     */
+    template <class... Args> requires(std::constructible_from<poll_type, Args...>)
+    TimedAwaiter(Args &&...args) : TimedAwaiter(0, poll_type{std::forward<Args>(args)...}) {}
+
+    TimedAwaiter &set_timeout(std::chrono::milliseconds dur) {
+      __end_tp = clock_type::now() + dur;
+      return *this;
+    }
 
     bool await_ready() {
       __res = __p.poll();
